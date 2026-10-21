@@ -590,14 +590,14 @@ function engineRouteObj(rt,wps){
     let acc=0,li=0; for(let k=0;k<nseg;k++){ acc+=d[k]*1000; while(li<rt.legs.length-1&&acc>=rt.legs.slice(0,li+1).reduce((a,l)=>a+l.distance,0)){ legEnd.push(k+1); li++; } } legEnd.push(nseg);
   }
   // skyltad hastighet ≈ OSRM:s hastighet / 0,8 (samma antagande som när vägnätet byggdes)
-  const vseg=k=>{ const v=t[k]>0?d[k]/(t[k]/3600)/0.8:0; return v>0?clamp(v,20,120):0; };
+  // räknas per bit på ca 800 m: OSRM:s tid för hela biten, så att korta segment med noll sekunder inte ger för hög fart
   const X=[],Y=[],Zr=[],L=[],V=[],cutIx=new Set(legEnd);
   const push=(c)=>{ const [x,y]=wgs2sweref(c[1],c[0]); X.push(x); Y.push(y); Zr.push(zNear(x,y)); };
   push(C[0]); let accL=0, accT=0; const wpIx=[0];
   for(let k=0;k<nseg;k++){
-    accL+=d[k]; const v=vseg(k); accT+=v>0?d[k]/v:0;
+    accL+=d[k]; accT+=t[k];
     if(accL>=0.8||cutIx.has(k+1)||k===nseg-1){
-      push(C[k+1]); L.push(accL); V.push(accT>0?accL/accT:50); accL=0; accT=0;
+      push(C[k+1]); L.push(accL); V.push(accT>0?clamp(accL/(accT/3600)/0.8,20,120):50); accL=0; accT=0;
       if(cutIx.has(k+1)) wpIx.push(X.length-1);
     }
   }
