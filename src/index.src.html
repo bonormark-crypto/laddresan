@@ -212,7 +212,8 @@ tr.clickable{cursor:pointer}
           <input type="radio" name="rmode" id="rm-short" value="short"><label for="rm-short">Kortaste</label>
           <input type="radio" name="rmode" id="rm-eco" value="eco"><label for="rm-eco">Lägst förbrukning</label>
         </div>
-        <div class="hint" id="rmhint">Kortaste väg håller sig till större vägar och undviker genvägar genom tätorter.</div></div>
+        <div class="hint" id="rmhint">Kortaste väg håller sig till större vägar och undviker genvägar genom tätorter.</div>
+        <div class="hint" id="engstat" hidden aria-live="polite"></div></div>
       <div class="field" style="margin-top:8px"><label for="to">Till</label><div class="combo has-pin" id="c-to"><span class="pin" style="background:var(--ink)"></span><input type="text" id="to" autocomplete="off" spellcheck="false" placeholder="Sök ort eller sparad plats"></div></div>
     </div>
     <div class="sec">
@@ -531,11 +532,129 @@ function buildRoute(stops,mode,ctx){ // stops: array of place records (start, vi
     if(d>0.05){ addPt(q[3],q[4],gz,d,50); }
     if(s<stops.length-2){ viaKm.push(km); viaIx.push(X.length-1); if(d>0.05) addPt(gx,gy,gz,d,50,q[7],k); }
   }
-  // smooth the elevation profile (±2 km window) so DEM noise is not counted as climbing
-  const n=X.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+L[k-1];
+  return {X,Y,Z:smoothZ(Z,L),L,V,EI,EK,viaKm,viaIx,km};
+}
+// smooth the elevation profile (±2 km window) so DEM noise is not counted as climbing
+function smoothZ(Z,L){
+  const n=Z.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+L[k-1];
   const Zs=new Array(n); let a=0,b=0,sum=0;
   for(let k=0;k<n;k++){ while(b<n&&cum[b]<=cum[k]+2){sum+=Z[b];b++;} while(cum[a]<cum[k]-2){sum-=Z[a];a++;} Zs[k]=sum/(b-a); }
-  return {X,Y,Z:Zs,L,V,EI,EK,viaKm,viaIx,km};
+  return Zs;
+}
+
+/* ---------- Ruttmotor (webbplatsen): OSRM på OpenStreetMaps fullständiga vägnät ----------
+   Snabbaste vägen hämtas direkt från OSRM. För Kortaste och Lägst förbrukning väljer Laddresans eget
+   vägnät vägtyp; där den vägen skiljer sig från den snabbaste läggs passagepunkter som skickas till
+   OSRM. Av kandidaterna väljs sedan den som är kortast respektive drar minst energi enligt modellen.
+   Svarar ingen ruttmotor används Laddresans eget vägnät. */
+const ENGINE=SITE;
+const OSRM_HOSTS=['https://routing.openstreetmap.de/routed-car','https://router.project-osrm.org'];
+const osrmCache=new Map();
+async function osrmRoute(lls){ // lls: [[lat,lon],...] i körordning
+  const q='/route/v1/driving/'+lls.map(p=>(+p[1]).toFixed(5)+','+(+p[0]).toFixed(5)).join(';')+'?overview=full&geometries=geojson&annotations=distance,duration&steps=false';
+  if(osrmCache.has(q)) return osrmCache.get(q);
+  let lastErr=null;
+  for(const h of OSRM_HOSTS){
+    try{
+      const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(),25000);
+      const r=await fetch(h+q,{signal:ctl.signal}); clearTimeout(tm);
+      const j=await r.json();
+      if(j.code!=='Ok'||!j.routes||!j.routes[0]) throw new Error(j.message||j.code||('HTTP '+r.status));
+      osrmCache.set(q,j.routes[0]); return j.routes[0];
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('ingen ruttmotor svarade');
+}
+// höjd från närmaste punkt i Laddresans vägnät (inom 400 m), annars interpolerad längs rutten
+let ZGRID=null;
+function zNear(x,y){
+  if(!ZGRID){ ZGRID=new Map(); G.e.forEach(e=>{ const P=e[2],Zs=e[3]; for(let k=0;k<Zs.length;k++){ const c=Math.floor(P[2*k]/2)*100000+Math.floor(P[2*k+1]/2); let a=ZGRID.get(c); if(!a) ZGRID.set(c,a=[]); a.push(P[2*k],P[2*k+1],Zs[k]); } }); }
+  const cx=Math.floor(x/2), cy=Math.floor(y/2); let bd=0.16, bz=NaN;
+  for(let i=-1;i<=1;i++) for(let j=-1;j<=1;j++){ const a=ZGRID.get((cx+i)*100000+cy+j); if(!a) continue;
+    for(let k=0;k<a.length;k+=3){ const d=(a[k]-x)**2+(a[k+1]-y)**2; if(d<bd){bd=d;bz=a[k+2];} } }
+  return bz;
+}
+const hav=(a,b)=>{ const R=6371, la1=a[1]*Math.PI/180, la2=b[1]*Math.PI/180, dl=(b[0]-a[0])*Math.PI/180;
+  return 2*R*Math.asin(Math.sqrt(Math.sin((la2-la1)/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dl/2)**2)); };
+// OSRM-svar -> ruttobjekt i samma form som buildRoute (punkter ungefär var 800:e meter)
+// wps: [{type:'start'|'via'|'pin'|'end', ll}] i den ordning de skickades
+function engineRouteObj(rt,wps){
+  const C=rt.geometry.coordinates; const nseg=C.length-1;
+  const d=new Float64Array(nseg), t=new Float64Array(nseg), legEnd=[];
+  let s=0; const anns=rt.legs.map(l=>l.annotation||{});
+  if(anns.reduce((a,x)=>a+((x.distance&&x.distance.length)||0),0)===nseg){
+    rt.legs.forEach((l,i)=>{ const A=anns[i]; for(let k=0;k<A.distance.length;k++){ d[s]=A.distance[k]/1000; t[s]=A.duration[k]; s++; } legEnd.push(s); });
+  }else{ // reserv: avstånd längs geometrin, tid fördelad efter sträcka
+    for(let k=0;k<nseg;k++) d[k]=hav(C[k],C[k+1]);
+    const tot=d.reduce((a,b)=>a+b,0)||1; for(let k=0;k<nseg;k++) t[k]=rt.duration*d[k]/tot;
+    let acc=0,li=0; for(let k=0;k<nseg;k++){ acc+=d[k]*1000; while(li<rt.legs.length-1&&acc>=rt.legs.slice(0,li+1).reduce((a,l)=>a+l.distance,0)){ legEnd.push(k+1); li++; } } legEnd.push(nseg);
+  }
+  // skyltad hastighet ≈ OSRM:s hastighet / 0,8 (samma antagande som när vägnätet byggdes)
+  const vseg=k=>{ const v=t[k]>0?d[k]/(t[k]/3600)/0.8:0; return v>0?clamp(v,20,120):0; };
+  const X=[],Y=[],Zr=[],L=[],V=[],cutIx=new Set(legEnd);
+  const push=(c)=>{ const [x,y]=wgs2sweref(c[1],c[0]); X.push(x); Y.push(y); Zr.push(zNear(x,y)); };
+  push(C[0]); let accL=0, accT=0; const wpIx=[0];
+  for(let k=0;k<nseg;k++){
+    accL+=d[k]; const v=vseg(k); accT+=v>0?d[k]/v:0;
+    if(accL>=0.8||cutIx.has(k+1)||k===nseg-1){
+      push(C[k+1]); L.push(accL); V.push(accT>0?accL/accT:50); accL=0; accT=0;
+      if(cutIx.has(k+1)) wpIx.push(X.length-1);
+    }
+  }
+  // höjder som saknas: linjärt mellan kända punkter
+  const n=X.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+L[k-1];
+  const known=[]; for(let k=0;k<n;k++) if(!isNaN(Zr[k])) known.push(k);
+  if(!known.length) Zr.fill(0); else { let j=0; for(let k=0;k<n;k++){ if(!isNaN(Zr[k])) continue; while(j<known.length-1&&known[j+1]<k) j++;
+    const a=known[j], b=known.find(q=>q>k); if(b==null||a>k) Zr[k]=Zr[a>k?a:known[known.length-1]]; else Zr[k]=Zr[a]+(Zr[b]-Zr[a])*(cum[k]-cum[a])/((cum[b]-cum[a])||1); } }
+  const viaKm=[],viaIx=[],pins=[];
+  wps.forEach((w,i)=>{ const ix=wpIx[Math.min(i,wpIx.length-1)]; if(w.type==='via'){ viaKm.push(cum[ix]); viaIx.push(ix); } if(w.type==='pin') pins.push({km:cum[ix],ix,ll:w.ll}); });
+  return {X,Y,Z:smoothZ(Zr,L),L,V,EI:new Array(n).fill(0),EK:new Array(n).fill(-1),viaKm,viaIx,km:cum[n-1],src:'osrm',pins};
+}
+// passagepunkter som tvingar OSRM in på den väg Laddresans vägnät valt
+function enginePins(Rg,Rf){
+  if(!Rg||!Rf||Rg===Rf) return [];
+  const C=shapeCtx(Rg), bounds=[C.firstG,...(Rg.viaIx||[]).map(i=>C.ixAt(C.cum[i])),C.lastG];
+  const out=[];
+  for(let j=0;j<bounds.length-1;j++){ const a=bounds[j], b=bounds[j+1]; if(b-a<2) continue;
+    shapeRange(Rg,a,b,[a,b],12,{fill:false}).forEach(k=>out.push({km:C.cum[k],ll:sweref2wgs(Rg.X[k],Rg.Y[k])})); }
+  return out.sort((p,q)=>p.km-q.km);
+}
+function routeSum(r,set,car){ if(!r) return null; let min=0,kwh=0,sc=0; const Tavg=(set.t0+set.t1)/2, m=car.kg+set.load;
+  for(let k=0;k<r.L.length;k++){ let v=r.V[k]*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v); min+=r.L[k]/v*60;
+    const dh=r.Z[k+1]-r.Z[k], pe=dh>0? m*9.81*dh/car.eta : m*9.81*dh*set.recup; kwh+=Math.max(0,r.L[k]*consumption(car,set,v,Tavg)/100+pe/3.6e6); sc+=r.L[k]*ROADPEN(r.V[k]); }
+  return {km:r.km,min,kwh,sc}; }
+const engineSel=new Map(), engineBad=new Set(); let engTimer=0, engBusy='';
+function setEngStat(m,bad){ const el=$('#engstat'); if(!el) return; el.hidden=!m; el.textContent=m||''; el.style.color=bad?'var(--bad)':''; }
+function startEngine(ek,stops,Rg,set,car){
+  if(engBusy===ek||engineBad.has(ek)) return;
+  clearTimeout(engTimer); setEngStat('Hämtar exakt väg från OSRM …');
+  engTimer=setTimeout(async()=>{
+    engBusy=ek;
+    try{
+      const pts=stops.map(p=>[p[5],p[6]]);
+      const base=pts.map((ll,i)=>({type:i===0?'start':i===pts.length-1?'end':'via',ll}));
+      const order=(pins,Rgm)=>{ const vk=Rgm.viaKm||[]; const out=[base[0]]; let pi=0;
+        for(let i=1;i<base.length;i++){ const lim=i-1<vk.length?vk[i-1]:Infinity; while(pi<pins.length&&pins[pi].km<lim){ out.push({type:'pin',ll:pins[pi].ll}); pi++; } out.push(base[i]); }
+        return out; };
+      const fastW=base, Ef=engineRouteObj(await osrmRoute(fastW.map(w=>w.ll)),fastW);
+      const R={fast:Ef}; const cands=[Ef];
+      for(const md of ['eco','short']){
+        const pins=enginePins(Rg[md],Rg.fast); if(!pins.length) continue;
+        const w=order(pins,Rg[md]); const r=engineRouteObj(await osrmRoute(w.map(x=>x.ll)),w); r.from=md; cands.push(r);
+      }
+      const S=cands.map(r=>routeSum(r,set,car)), SF=S[0];
+      let ie=0; S.forEach((x,i)=>{ if(x.min<=SF.min*MAXEXTRA+0.01&&x.kwh<S[ie].kwh) ie=i; });
+      let is=0; S.forEach((x,i)=>{ if(x.sc<S[is].sc) is=i; });
+      R.eco=cands[ie]; R.short=cands[is];
+      engineSel.set(ek,{R,alt:{fast:SF,short:S[is],eco:S[ie]}});
+      engBusy='';
+      if(engineSel.size>40) engineSel.delete(engineSel.keys().next().value);
+      routeKey=''; compute();
+    }catch(e){
+      engBusy=''; engineBad.add(ek);
+      setEngStat('Ruttmotorn (OSRM) svarade inte. Rutten är ungefärlig och bygger på Laddresans eget vägnät.',true);
+    }
+  },350);
 }
 
 /* ---------- Chargers near the route ---------- */
@@ -931,16 +1050,17 @@ function compute(){
     const R={}; for(const md of ['fast','short','eco']) R[md]=buildRoute(stops,md,ctx);
     if(prevKey!==key+'|'+state.rmode) fitPending=true;
     route=R[state.rmode]; routeKey=fullKey;
-    const sum=r=>{ if(!r) return null; let min=0,kwh=0; const Tavg=(set.t0+set.t1)/2, car=ctx.car, m=car.kg+set.load;
-      for(let k=0;k<r.L.length;k++){ let v=r.V[k]*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v); min+=r.L[k]/v*60;
-        const dh=r.Z[k+1]-r.Z[k], pe=dh>0? m*9.81*dh/car.eta : m*9.81*dh*set.recup; kwh+=Math.max(0,r.L[k]*consumption(car,set,v,Tavg)/100+pe/3.6e6); }
-      return {km:r.km,min,kwh}; };
+    const sum=r=>routeSum(r,set,ctx.car);
     const SF=sum(R.fast), SS=sum(R.short); let SE=sum(R.eco);
     // the eco search uses raw edge heights; keep whichever candidate is truly lowest within the time cap
     for(const [md,Sx] of [['short',SS],['fast',SF]]){ if(Sx&&SE&&SF&&Sx.min<=SF.min*MAXEXTRA+0.01&&Sx.kwh<SE.kwh){ R.eco=R[md]; SE=Sx; } }
     if(state.rmode==='eco') route=R.eco;
     routeSet=R;
-    routeAlt={fast:SF,short:SS,eco:SE}; }
+    routeAlt={fast:SF,short:SS,eco:SE};
+    if(ENGINE){ const ek=key+'|'+esig, E=engineSel.get(ek);
+      if(E){ routeSet=E.R; routeAlt=E.alt; route=E.R[state.rmode]; setEngStat('Rutten följer OpenStreetMaps fullständiga vägnät (OSRM).'); }
+      else if(engineBad.has(ek)) setEngStat('Ruttmotorn (OSRM) svarade inte. Rutten är ungefärlig och bygger på Laddresans eget vägnät.',true);
+      else startEngine(ek,stops,R,set,ctx.car); } }
   if(!route){ showStatus('Kunde inte hitta någon väg mellan de valda platserna.',true); return; }
   const cands=chargersAlong(route,set);
   const car=CARS[state.car];
@@ -1008,16 +1128,18 @@ function shapeCtx(R){
   const TOWN=SHAPE_TOWNS;
   const inTown=k=>TOWN.some(([x,y,r])=>Math.abs(R.X[k]-x)<r&&Math.abs(R.Y[k]-y)<r&&Math.hypot(R.X[k]-x,R.Y[k]-y)<r);
   // ordinary two-way roads: 30–90 km/h, not at a junction, no 110+ road within 3 km, not in a larger town
-  const ok=k=>R.EI[k]>=0&&R.EK[k]>0&&R.EK[k]<G.e[R.EI[k]][4].length&&vLo(k)>=30&&vHi(k)<=91&&wmax[k]<=101&&!inTown(k);
+  const onG=k=>R.src==='osrm'||(R.EI[k]>=0&&R.EK[k]>0&&R.EK[k]<G.e[R.EI[k]][4].length); // inte i en korsning
+  const ok=k=>onG(k)&&vLo(k)>=30&&vHi(k)<=91&&wmax[k]<=101&&!inTown(k);
   const firstG=R.EI.findIndex(e=>e>=0); let lastG=n-1; while(lastG>0&&R.EI[lastG]<0) lastG--;
   const ixAt=km=>{ let lo=0,hi=n-1; while(lo<hi){const m=(lo+hi)>>1; if(cum[m]<km) lo=m+1; else hi=m;} while(lo<lastG&&R.EI[lo]<0) lo++; return Math.min(Math.max(lo,firstG),lastG); };
   // inside a short slow stretch next to a motorway: town streets are fine even close to the motorway
-  const okSlow=k=>R.EI[k]>=0&&R.EK[k]>0&&R.EK[k]<G.e[R.EI[k]][4].length&&vLo(k)>=30&&vHi(k)<=70&&!inTown(k);
+  const okSlow=k=>onG(k)&&vLo(k)>=30&&vHi(k)<=70&&!inTown(k);
   return R._sh={n,cum,ok,okSlow,firstG,lastG,ixAt};
 }
 // pass-through points for the stretch of route between point indices i0 and i1 (fixed = indices that are
 // already waypoints, incl. i0 and i1); at most 'budget' points
-function shapeRange(R,i0,i1,fixedIx,budget){
+function shapeRange(R,i0,i1,fixedIx,budget,opts={}){
+  const AGREE=opts.agree!==false&&R.src!=='osrm', FILL=opts.fill!==false;
   const C=shapeCtx(R), {cum,ok,okSlow}=C; if(budget<=0) return [];
   const fixed=new Set(fixedIx); let anc=[...fixed].sort((a,b)=>a-b);
   const shape=new Set(), M=symMetric(CT), key=(x,y)=>x.toFixed(3)+','+y.toFixed(3);
@@ -1038,7 +1160,7 @@ function shapeRange(R,i0,i1,fixedIx,budget){
     add(k); return true; };
   // 1. agree with our own fastest road between consecutive points
   const tried=new Set();
-  for(let guard=0;guard<40&&shape.size<budget;guard++){
+  for(let guard=0;AGREE&&guard<40&&shape.size<budget;guard++){
     let added=false;
     for(let j=0;j<anc.length-1&&!added;j++){
       const ia=anc[j], ib=anc[j+1]; if(ib-ia<2) continue;
@@ -1053,7 +1175,7 @@ function shapeRange(R,i0,i1,fixedIx,budget){
   }
   // 2. spread the remaining points over the longest gaps
   const dead=new Set();
-  while(shape.size<budget){
+  while(FILL&&shape.size<budget){
     let bj=-1,bg=8; for(let j=0;j<anc.length-1;j++){ const g=cum[anc[j+1]]-cum[anc[j]]; if(g>bg&&!dead.has(anc[j]+'-'+anc[j+1])){bg=g;bj=j;} }
     if(bj<0) break; const ia=anc[bj], ib=anc[bj+1], mid=(cum[ia]+cum[ib])/2;
     let k=pick(ia,ib,mid,bg/4); if(k<0) k=pick(ia,ib,mid,bg/2-3); // widen to the whole gap, 3 km from its ends
@@ -1063,7 +1185,7 @@ function shapeRange(R,i0,i1,fixedIx,budget){
 }
 // One Google Maps link per leg between charging stops (Google takes at most 9 waypoints per link).
 function gmapsLinks(){
-  const {res,pts}=result, R=route, shaping=!!(routeSet&&R!==routeSet.fast&&R.EI);
+  const {res,pts}=result, R=route, shaping=!!(routeSet&&R!==routeSet.fast&&R.EI), pins=R.pins||[];
   const C=shapeCtx(R), ll=p=>p.ll[0].toFixed(5)+','+p.ll[1].toFixed(5);
   const plLL=i=>[PL[i][5],PL[i][6]];
   const ends=[{km:-1,ll:plLL(pts[0]),ix:C.firstG,name:PL[pts[0]][0]}];
@@ -1074,7 +1196,9 @@ function gmapsLinks(){
   for(let e=0;e<ends.length-1;e++){
     const A=ends[e], B=ends[e+1], inner=vias.filter(v=>v.km>A.km&&v.km<B.km);
     let wps=inner.slice();
-    if(shaping){ const sh=shapeRange(R,A.ix,B.ix,[A.ix,B.ix,...inner.map(v=>v.ix)],9-inner.length); nsh+=sh.length; sh.forEach(k=>wps.push({km:C.cum[k],ll:sweref2wgs(R.X[k],R.Y[k])})); }
+    if(shaping){ // OSRM-rutt: samma passagepunkter som rutten byggdes med, plus fler på långa sträckor
+      const myPins=pins.filter(p=>p.km>A.km&&p.km<B.km); myPins.forEach(p=>wps.push({km:p.km,ll:p.ll})); nsh+=myPins.length;
+      const sh=shapeRange(R,A.ix,B.ix,[A.ix,B.ix,...inner.map(v=>v.ix),...myPins.map(p=>p.ix)],9-inner.length-myPins.length); nsh+=sh.length; sh.forEach(k=>wps.push({km:C.cum[k],ll:sweref2wgs(R.X[k],R.Y[k])})); }
     wps.sort((x,y)=>x.km-y.km);
     const seq=[A,...wps,B]; let i=0;
     while(i<seq.length-1){ const j=Math.min(seq.length-1,i+10); const wp=seq.slice(i+1,j).map(ll).join('|');
@@ -1175,7 +1299,7 @@ function renderNotes(){
   <p><b>Val av laddstopp.</b> Alla snabbladdare inom valt avstånd från vägen prövas (${cands.length} st på den här rutten). Dynamisk programmering väljer den kombination som ger kortast restid, lägst kostnad eller färst stopp. Avstickaren till laddaren räknas fram och tillbaka med 1,3 × fågelvägen i 50 km/h.</p>
   <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.</p>
   <p><b>Operatörer.</b> Operatörer markerade Undvik används aldrig. Ett stopp hos en operatör som inte är föredragen räknas som 5, 15 eller 45 minuter längre beroende på valet (vid Lägst kostnad 5 kr per minut), så planeraren väljer en föredragen operatör när skillnaden är mindre än så. Med Ladda bara hos föredragna används inga andra.</p>
-  <p><b>Data.</b> Vägnätet bygger på OpenStreetMap via OSRM (${META.roadkm} km huvudvägar, ${META.places} orter). Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
+  <p><b>Data.</b> ${SITE?'Rutten hämtas från ruttmotorn OSRM med OpenStreetMaps fullständiga vägnät (© OpenStreetMap-bidragsgivare). Laddresans eget vägnät, '+META.roadkm+' km huvudvägar, används för att välja vägtyp i lägena Kortaste och Lägst förbrukning och som reserv om ruttmotorn inte svarar.':'Vägnätet bygger på OpenStreetMap via OSRM ('+META.roadkm+' km huvudvägar).'} Ortlistan har ${META.places} orter. Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
   <p><b>Begränsningar.</b> Ingen hänsyn tas till trafik, köer vid laddaren, vägarbeten eller färjor. Ort väljs från en lista över ${META.places} svenska orter med minst 1 000 invånare${SITE?' och de platser du själv sparar under Mina platser':' och sparade adresser'}. Restiden bygger på vald andel av skyltad hastighet utan stopp för mat.</p>`;
 }
 
