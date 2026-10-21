@@ -1,0 +1,68 @@
+name: Bygg och publicera
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'   # varje måndag 03:17 UTC: hämta nya laddplatser och publicera om
+  workflow_dispatch:        # kör manuellt från fliken Actions
+
+permissions:
+  contents: write   # för att spara uppdaterad laddardata i repot
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installera Python-paket
+        run: pip install -r requirements.txt
+
+      - name: Uppdatera laddplatser (Open Charge Map + supercharge.info)
+        if: github.event_name != 'push'
+        continue-on-error: true   # ett tillfälligt fel hos en källa ska inte stoppa publiceringen
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/openchargemap/ocm-export.git /tmp/ocm
+          git -C /tmp/ocm sparse-checkout set data/SE
+          python scripts/update_chargers.py --ocm-dir /tmp/ocm/data/SE --ocm-date "$(git -C /tmp/ocm log -1 --format=%cs)"
+
+      - name: Spara uppdaterad laddardata i repot
+        if: github.event_name != 'push'
+        run: |
+          if ! git diff --quiet -- data/; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/
+            git commit -m "Uppdatera laddplatser"
+            git push
+          fi
+
+      - name: Bygg webbplatsen
+        run: python scripts/assemble.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

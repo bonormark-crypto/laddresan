@@ -1,0 +1,1242 @@
+<title>Laddresan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: road-sign blue band on top, controls column left, map + plan right; stacks on phones. */
+:root{
+  --bg:#edf0ec; --surface:#ffffff; --surface-2:#f5f7f4; --ink:#16232a; --muted:#5a686d; --line:#d3dad4;
+  --sign:#0a5ea6; --sign-deep:#084b85; --sign-ink:#ffffff;
+  --charge:#d99400; --charge-ink:#1d1400;
+  --land:#e2e8df; --land-other:#eceee9; --water:#c6dbe6; --road:#a9b5af; --road-hi:#7d8b85;
+  --ok:#2c7a4c; --warn:#a96400; --bad:#b3261e;
+  --font-display:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --font-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1518; --surface:#152025; --surface-2:#1a272d; --ink:#e3ebe7; --muted:#93a39e; --line:#2a3a41;
+  --sign:#2f7fc8; --sign-deep:#1d5f9e; --sign-ink:#ffffff;
+  --charge:#f0b02a; --charge-ink:#1d1400;
+  --land:#1b292e; --land-other:#141f23; --water:#0c2332; --road:#3e525a; --road-hi:#5f7880;
+  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1518; --surface:#152025; --surface-2:#1a272d; --ink:#e3ebe7; --muted:#93a39e; --line:#2a3a41;
+  --sign:#2f7fc8; --sign-deep:#1d5f9e; --sign-ink:#ffffff;
+  --charge:#f0b02a; --charge-ink:#1d1400;
+  --land:#1b292e; --land-other:#141f23; --water:#0c2332; --road:#3e525a; --road-hi:#5f7880;
+  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--font-body);font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1440px;margin:0 auto}
+/* sign band */
+.band{background:var(--sign);color:var(--sign-ink)}
+.band .wrap{padding-block:14px 16px;display:flex;flex-wrap:wrap;gap:6px 24px;align-items:flex-end;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px}
+.brand h1{font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:.01em;margin:0;line-height:1}
+.brand svg{flex:none}
+.signline{font-family:var(--font-display);font-weight:600;font-size:19px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;min-width:0}
+.signline .dist{border:2px solid var(--sign-ink);border-radius:5px;padding:0 7px;font-size:17px}
+.tag{font-size:13px;opacity:.85;font-family:var(--font-body);font-weight:500}
+/* main grid */
+main.wrap{display:grid;grid-template-columns:minmax(300px,370px) minmax(0,1fr);gap:18px;padding-block:18px 40px;align-items:start}
+@media (max-width:900px){main.wrap{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:4px 0}
+.sec{padding:14px 16px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0}
+.sec h2{font-family:var(--font-display);font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+.field{display:grid;gap:4px;margin-bottom:10px}
+.field:last-child{margin-bottom:0}
+.field label,.lbl{font-size:13px;color:var(--muted);font-weight:500}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;margin-bottom:10px}
+.row2 .field{margin-bottom:0}
+.row2:last-child{margin-bottom:0}
+input[type=text],input[type=number],input[type=time],select{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:8px 10px;min-height:38px}
+input[type=number]{text-align:right}
+.hint{font-size:12px;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:4px}
+input[type=range]{width:100%;padding:0;accent-color:var(--sign)}
+.check input{width:17px;height:17px;accent-color:var(--sign)}
+/* combobox */
+.combo{position:relative}
+.combo input{padding-right:34px}
+.combo .pin{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:10px;height:10px;border-radius:50%;pointer-events:none}
+.combo.has-pin input{padding-left:28px}
+.combo-list{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);max-height:280px;overflow:auto;margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.combo-list li{padding:7px 9px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.combo-list li small{color:var(--muted);white-space:nowrap}
+.combo-list li[aria-selected=true],.combo-list li:hover{background:var(--surface-2)}
+.combo-list li.saved{font-weight:600}
+.combo-list .grp{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 9px 2px;cursor:default;background:none!important}
+.via-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-bottom:8px}
+.iconbtn{border:1px solid var(--line);background:var(--surface-2);border-radius:7px;min-width:38px;min-height:38px;cursor:pointer;display:grid;place-items:center}
+.iconbtn:hover{border-color:var(--muted)}
+.linkbtn{background:none;border:0;color:var(--sign);cursor:pointer;padding:4px 0;font-weight:600}
+.route-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.route-head h2{margin:0}
+.rh-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}
+#reset.armed{color:var(--bad)}
+details.favs{margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+details.favs summary{padding:8px 10px;cursor:pointer;font-weight:600;color:var(--sign)}
+.favinner{padding:2px 10px 10px}
+.favlist{list-style:none;margin:0 0 10px;padding:0}
+.favlist:empty{display:none}
+.favlist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.favlist li small{display:block;color:var(--muted);font-size:12px}
+.favlist button{border:0;background:none;color:var(--bad);cursor:pointer;font-weight:600;min-height:32px;padding:0 4px}
+/* segmented */
+.seg.seg2{grid-template-columns:repeat(2,1fr)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface-2)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{text-align:center;padding:8px 4px;cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);border-left:1px solid var(--line)}
+.seg label:first-of-type{border-left:0}
+.seg input:checked+label{background:var(--sign);color:var(--sign-ink)}
+.seg input:focus-visible+label{outline:2px solid var(--sign);outline-offset:-3px}
+details.more{border-top:1px solid var(--line)}
+details.more summary{padding:12px 16px;cursor:pointer;font-family:var(--font-display);font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+details.more .inner{padding:0 16px 14px}
+.ops{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:6px 8px;align-items:center}
+.opbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;min-height:38px;padding:6px 10px;cursor:pointer;text-align:left;font-size:14px}
+.opbtn .st{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.opbtn[data-v=pref]{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--surface))}
+.opbtn[data-v=pref] .st{color:var(--ok)}
+.opbtn[data-v=avoid]{opacity:.7}
+.opbtn[data-v=avoid] .name{text-decoration:line-through}
+.opbtn[data-v=avoid] .st{color:var(--bad)}
+.chip.pref{border-color:var(--ok);color:var(--ok)}
+/* output */
+.out{display:grid;gap:16px;min-width:0}
+.status{border-radius:var(--r);padding:12px 14px;border:1px solid var(--line);background:var(--surface)}
+.status.bad{border-color:var(--bad);color:var(--bad)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+@media (max-width:640px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tiles .tile.main{grid-column:1/-1}}
+.tile{background:var(--surface);padding:12px 14px;min-width:0}
+.tile .k{font-size:12px;color:var(--muted);font-weight:500}
+.tile .v{font-family:var(--font-display);font-weight:700;font-size:26px;line-height:1.15}
+.tile .s{font-size:12.5px;color:var(--muted)}
+.tile.main .v{color:var(--sign)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.card-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
+.card-h h3{margin:0;font-family:var(--font-display);font-size:18px;font-weight:600}
+.card-b{padding:12px 14px 14px}
+/* map */
+.mapbox{position:relative;height:min(62vh,560px);min-height:340px;border-top:1px solid var(--line);margin-top:10px;overflow:hidden;border-radius:0 0 var(--r) var(--r);background:var(--water);touch-action:none}
+#map{width:100%;height:100%;display:block;cursor:grab}
+#map.drag{cursor:grabbing}
+.mapctl{position:absolute;right:calc(10px + env(safe-area-inset-right,0px));top:10px;display:grid;gap:6px}
+.mapctl button{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:18px;font-weight:600;display:grid;place-items:center}
+.legend{position:absolute;left:10px;bottom:10px;background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;display:grid;gap:3px}
+.legend.hide{display:none}
+@media (max-width:520px){.legend{display:none}}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.pop{position:absolute;left:10px;top:10px;max-width:min(320px,calc(100% - 70px));background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13.5px;box-shadow:0 8px 22px rgba(0,0,0,.16)}
+.pop b{display:block;font-size:14.5px}
+.pop .x{position:absolute;right:4px;top:2px;border:0;background:none;cursor:pointer;font-size:16px;color:var(--muted)}
+/* chart */
+.chart svg{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-size:11px;font-family:var(--font-body)}
+/* timeline */
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:52px 26px minmax(0,1fr);gap:0 8px;position:relative}
+.tl .t{font-family:var(--font-display);font-weight:600;font-size:16px;padding-top:9px;text-align:right}
+.tl .dot{position:relative}
+.tl .dot::before{content:"";position:absolute;left:12px;top:0;bottom:0;width:3px;background:var(--sign)}
+.tl li:first-child .dot::before{top:16px}
+.tl li:last-child .dot::before{bottom:calc(100% - 16px)}
+.tl .dot span{position:absolute;left:4px;top:9px;width:19px;height:19px;border-radius:50%;background:var(--surface);border:3px solid var(--sign);display:grid;place-items:center}
+.tl li.stop .dot span{background:var(--charge);border-color:var(--charge);color:var(--charge-ink);width:23px;height:23px;left:2px;top:7px;font-size:12px;font-weight:700}
+.tl li.via .dot span{width:15px;height:15px;left:6px;top:11px}
+.tl .body{padding:7px 0 14px;min-width:0}
+.tl .ttl{font-weight:600}
+.tl .meta{font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface-2);white-space:nowrap}
+.chip.soc{border-color:transparent;background:color-mix(in srgb,var(--charge) 22%,var(--surface))}
+.leg{font-size:12.5px;color:var(--muted);padding:0 0 10px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:9px 13px;font-weight:600;text-decoration:none;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--sign);border-color:var(--sign);color:var(--sign-ink)}
+a.small{font-size:12.5px;color:var(--sign);text-decoration:none;font-weight:600}
+/* table */
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:720px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td.wrap{white-space:normal;text-align:left;min-width:200px;font-size:12.5px;color:var(--muted)}
+th{font-size:12px;color:var(--muted);font-weight:600}
+.thbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+.thbtn:hover{color:var(--ink)}
+th[aria-sort=ascending] .thbtn,th[aria-sort=descending] .thbtn{color:var(--sign)}
+.thbtn .arr{font-size:10px;opacity:.8}
+tr.sel td{background:color-mix(in srgb,var(--sign) 10%,var(--surface))}
+tr.best td:first-child::after{content:"snabbast";margin-left:8px;font-size:11px;border-radius:4px;padding:1px 5px;background:var(--ok);color:#fff}
+tr.clickable{cursor:pointer}
+.notes{font-size:13.5px;color:var(--muted);display:grid;gap:8px}
+.notes p{margin:0;max-width:75ch}
+.notes b{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect x="1.5" y="1.5" width="31" height="31" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M19 6 10 19h6l-2 9 9-13h-6z" fill="currentColor"/></svg>
+      <div><h1>Laddresan</h1><div class="tag">Ruttplanerare för elbil i Sverige · snabbladdare från 150 kW</div></div>
+    </div>
+    <div class="signline" id="signline" aria-live="polite"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <aside class="panel" aria-label="Inställningar">
+    <div class="sec">
+      <div class="route-head"><h2>Rutt</h2><div class="rh-btns"><button class="linkbtn" id="swap" type="button" title="Byt start och mål">⇅ Byt riktning</button><button class="linkbtn" id="reset" type="button" title="Töm Från, Till och mellanstationer">↺ Rensa rutt</button></div></div>
+      <div class="field"><label for="from">Från</label><div class="combo has-pin" id="c-from"><span class="pin" style="background:var(--sign)"></span><input type="text" id="from" autocomplete="off" spellcheck="false" placeholder="Sök ort eller sparad plats"></div></div>
+      <div id="vias"></div>
+      <button class="linkbtn" id="addvia" type="button">+ Lägg till mellanstation</button>
+      <details class="favs" id="favbox" hidden><summary>★ Mina platser</summary><div class="favinner">
+        <ul class="favlist" id="favlist"></ul>
+        <div class="field"><label for="favname">Namn</label><input type="text" id="favname" maxlength="40" placeholder="t.ex. Hem eller Stugan"></div>
+        <div class="field"><label for="favaddr">Adress</label><input type="text" id="favaddr" maxlength="120" placeholder="Gatuadress och ort"></div>
+        <div class="btnrow"><button type="button" class="btn" id="favadd">Sök och spara</button></div>
+        <div class="hint" id="favstat" aria-live="polite">Platserna sparas bara i den här webbläsaren. Adressen slås upp i OpenStreetMap (Nominatim).</div>
+      </div></details>
+      <div class="field" style="margin-top:10px"><span class="lbl" id="rmlbl">Vägval</span>
+        <div class="seg" role="radiogroup" aria-labelledby="rmlbl">
+          <input type="radio" name="rmode" id="rm-fast" value="fast" checked><label for="rm-fast">Snabbaste</label>
+          <input type="radio" name="rmode" id="rm-short" value="short"><label for="rm-short">Kortaste</label>
+          <input type="radio" name="rmode" id="rm-eco" value="eco"><label for="rm-eco">Lägst förbrukning</label>
+        </div>
+        <div class="hint" id="rmhint">Kortaste väg håller sig till större vägar och undviker genvägar genom tätorter.</div></div>
+      <div class="field" style="margin-top:8px"><label for="to">Till</label><div class="combo has-pin" id="c-to"><span class="pin" style="background:var(--ink)"></span><input type="text" id="to" autocomplete="off" spellcheck="false" placeholder="Sök ort eller sparad plats"></div></div>
+    </div>
+    <div class="sec">
+      <h2>Bil och optimering</h2>
+      <div class="field"><label for="car">Bil</label><select id="car"></select><div class="hint" id="carinfo"></div></div>
+      <div class="field"><span class="lbl" id="optlbl">Välj laddstopp som ger</span>
+        <div class="seg" role="radiogroup" aria-labelledby="optlbl">
+          <input type="radio" name="opt" id="opt-tid" value="tid" checked><label for="opt-tid">Kortast restid</label>
+          <input type="radio" name="opt" id="opt-kr" value="kr"><label for="opt-kr">Lägst kostnad</label>
+          <input type="radio" name="opt" id="opt-stopp" value="stopp"><label for="opt-stopp">Färst stopp</label>
+        </div>
+      </div>
+    </div>
+    <div class="sec">
+      <h2>Batteri</h2>
+      <div class="row2">
+        <div class="field"><label for="s0">SOC vid avresa (%)</label><input type="number" id="s0" min="5" max="100" step="1" value="100"></div>
+        <div class="field"><label for="sf">SOC vid mål, minst (%)</label><input type="number" id="sf" min="0" max="80" step="1" value="10"></div>
+        <div class="field"><label for="res">Reserv vid laddstopp (%)</label><input type="number" id="res" min="0" max="50" step="1" value="10"></div>
+        <div class="field"><label for="maxsoc">Ladda högst till (%)</label><input type="number" id="maxsoc" min="30" max="100" step="1" value="100"></div>
+      </div>
+      <div class="hint">Vid varje stopp laddas precis så mycket som behövs till nästa stopp eller målet.</div>
+    </div>
+    <div class="sec">
+      <h2>Väder och körning</h2>
+      <div class="row2">
+        <div class="field"><label for="depdate">Avresedag</label><input type="date" id="depdate"></div>
+        <div class="field"><label for="dep">Avresa</label><input type="time" id="dep" value="08:00"></div>
+      </div>
+      <div class="field"><label for="wxmode">Temperatur och vind</label>
+        <select id="wxmode"><option value="manual">Ange själv</option><option value="fc">Väderprognos längs rutten</option></select></div>
+      <div class="field" id="wxbox" hidden>
+        <div class="btnrow"><button type="button" class="btn" id="wxfetch">Hämta prognos</button></div>
+        <div class="hint" id="wxstat" aria-live="polite"></div>
+      </div>
+      <div class="row2" id="manualwx">
+        <div class="field"><label for="t0">Temperatur vid start (°C)</label><input type="number" id="t0" min="-30" max="40" step="1" value="5"></div>
+        <div class="field"><label for="t1">Temperatur vid mål (°C)</label><input type="number" id="t1" min="-30" max="40" step="1" value="5"></div>
+      </div>
+      <div class="field" id="manualwind"><label for="wind">Motvind (m/s, minus = medvind)</label><input type="number" id="wind" min="-15" max="15" step="1" value="0"></div>
+      <div class="field"><label for="spmode">Hastighet</label>
+        <select id="spmode"><option value="sign">Andel av skyltad hastighet</option><option value="cap">Skyltad, men högst</option></select></div>
+      <div class="row2">
+        <div class="field" style="grid-column:1/-1"><label for="sppct">Hastighet i % av skyltad: <b id="sppctv">100 %</b></label><input type="range" id="sppct" min="100" max="125" step="1" value="100" aria-describedby="sppcth"><div class="hint" id="sppcth">100 % = tillåten hastighet, 125 % = t.ex. 112 km/h på 90-väg och 150 km/h på 120-väg. Hela planen räknas om när du drar.</div></div>
+        <div class="field"><label for="spmax">Högst (km/h)</label><input type="number" id="spmax" min="50" max="130" step="5" value="110"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="load">Last (kg)</label><input type="number" id="load" min="0" max="800" step="10" value="120"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="winter"> Vinterdäck (Crr × 1,25)</label>
+    </div>
+    <div class="sec">
+      <h2>Laddning</h2>
+      <div class="row2">
+        <div class="field"><label for="minkw">Laddare, minst</label><select id="minkw"><option value="150">150 kW</option><option value="200">200 kW</option><option value="250">250 kW</option><option value="300">300 kW</option></select></div>
+        <div class="field"><label for="corr">Max avstånd från vägen</label><select id="corr"><option value="1">1 km</option><option value="2" selected>2 km</option><option value="4">4 km</option><option value="8">8 km</option></select></div>
+        <div class="field"><label for="spill">Tidsspill per stopp (min)</label><input type="number" id="spill" min="0" max="60" step="1" value="5"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="precond" checked> Förkonditionera batteriet</label>
+    </div>
+    <div class="sec">
+      <h2>Laddoperatörer</h2>
+      <div class="field"><label for="prefmode">Föredragna operatörer</label>
+        <select id="prefmode"><option value="weak">Väljs om omvägen är liten (≈5 min)</option><option value="normal" selected>Väljs om det inte kostar mer än ≈15 min</option><option value="strong">Väljs om det inte kostar mer än ≈45 min</option><option value="only">Ladda bara hos föredragna</option></select>
+        <div class="hint" id="prefsum"></div></div>
+      <div class="ops" style="margin-bottom:6px"><span class="lbl">Operatör</span><span class="lbl" style="text-align:right">kr/kWh</span></div>
+      <div class="ops" id="ops" role="group" aria-label="Val per operatör"></div>
+      <div class="hint" style="margin-top:8px">Tryck på en operatör för att växla mellan Godta, Föredra och Undvik. Pris i kr/kWh utan abonnemang används för kostnaden och för valet Lägst kostnad.</div>
+    </div>
+    <details class="more">
+      <summary>Fler antaganden</summary>
+      <div class="inner">
+        <div class="row2">
+          <div class="field"><label for="wxfac">Vind vid bilen / vind på 10 m</label><input type="number" id="wxfac" min="0.3" max="1" step="0.05" value="0.7"></div>
+          <div class="field"><label for="recup">Återvinning nedför</label><input type="number" id="recup" min="0" max="0.9" step="0.05" value="0.6"></div>
+          <div class="field"><label for="cabin">Kupétemperatur (°C)</label><input type="number" id="cabin" min="15" max="26" step="1" value="21"></div>
+          <div class="field"><label for="loss">Laddförluster (%)</label><input type="number" id="loss" min="0" max="20" step="1" value="8"></div>
+        </div>
+        <div class="hint">Övriga konstanter (värmepump, baslast, köldpåverkan på batteriet och laddkurvor) är desamma som i Excelmodellen.</div>
+      </div>
+    </details>
+  </aside>
+
+  <section class="out" aria-label="Resultat">
+    <div class="status" id="status" hidden></div>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="card-h"><h3>Karta</h3><span class="hint" id="maphint">Dra för att panorera, scrolla eller nyp för att zooma. Tryck på en laddare för detaljer.</span></div>
+      <div class="mapbox" id="mapbox">
+        <svg id="map" role="img" aria-label="Karta över rutten och laddstoppen"></svg>
+        <div class="mapctl"><button type="button" id="zin" aria-label="Zooma in">+</button><button type="button" id="zout" aria-label="Zooma ut">−</button><button type="button" id="zfit" aria-label="Visa hela rutten" title="Visa hela rutten">⤢</button></div>
+        <div class="legend"><span><i style="background:var(--sign)"></i>Rutt</span><span><i style="background:var(--charge)"></i>Valt laddstopp</span><span><i style="background:var(--charge);opacity:.45"></i>Laddare längs rutten</span><span><i style="background:var(--road-hi)"></i>Övriga snabbladdare</span></div>
+        <div class="pop" id="pop" hidden></div>
+      </div>
+    </div>
+
+    <div class="card chart">
+      <div class="card-h"><h3>Laddnivå längs vägen</h3><span class="hint">Blå linje = SOC, grå yta = höjd över havet</span></div>
+      <div class="card-b" id="chart"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>Reseplan</h3><div class="btnrow" id="gmaps"></div></div>
+      <div class="card-b"><ol class="tl" id="plan"></ol></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>Alla bilar på samma rutt</h3><span class="hint">Tryck på en kolumnrubrik för att sortera, på en rad för att välja bilen</span></div>
+      <div class="card-b tbl"><table id="cmp"></table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>Så räknar planeraren</h3></div>
+      <div class="card-b notes" id="notes"></div>
+    </div>
+  </section>
+</main>
+
+<script type="application/json" id="d-graph">__GRAPH__</script>
+<script type="application/json" id="d-places">__PLACES__</script>
+<script type="application/json" id="d-chargers">__CHARGERS__</script>
+<script type="application/json" id="d-base">__BASE__</script>
+<script type="application/json" id="d-meta">__META__</script>
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const J=id=>JSON.parse(document.getElementById(id).textContent);
+const G=J('d-graph'), PL=J('d-places'), CH=J('d-chargers'), BASE=J('d-base'), META=J('d-meta');
+const TARGET='__TARGET__', SITE=TARGET==='site'; // 'site' = fristående webbplats, 'claude' = artifact i claude.ai
+/* Mina platser (bara webbplatsen): sparas i webbläsaren och läggs sist i ortslistan */
+const FAVK='laddresan.favs'; let FAVS=[];
+if(SITE){ try{ FAVS=JSON.parse(localStorage.getItem(FAVK)||'[]')||[]; }catch(e){ FAVS=[]; }
+  FAVS=FAVS.filter(f=>f&&typeof f.name==='string'&&isFinite(f.lat)&&isFinite(f.lon)); }
+const FAV0=PL.length;
+function wgs2sweref(lat,lon){ // [lat, lon] -> SWEREF 99 TM (km), Lantmäteriets formler
+  const a=6378137, f=1/298.257222101, e2=f*(2-f), n=f/(2-f), k0=0.9996, FE=500000, lon0=15*Math.PI/180;
+  const ah=a/(1+n)*(1+n*n/4+n**4/64);
+  const A=e2, B=(5*e2**2-e2**3)/6, C=(104*e2**3-45*e2**4)/120, D=(1237*e2**4)/1260;
+  const b1=n/2-2*n*n/3+5*n**3/16+41*n**4/180, b2=13*n*n/48-3*n**3/5+557*n**4/1440, b3=61*n**3/240-103*n**4/140, b4=49561*n**4/161280;
+  const ph=lat*Math.PI/180, s=Math.sin(ph), c=Math.cos(ph);
+  const ps=ph-s*c*(A+B*s*s+C*s**4+D*s**6), dl=lon*Math.PI/180-lon0;
+  const xi=Math.atan(Math.tan(ps)/Math.cos(dl)), et=Math.atanh(Math.cos(ps)*Math.sin(dl));
+  const N=k0*ah*(xi+b1*Math.sin(2*xi)*Math.cosh(2*et)+b2*Math.sin(4*xi)*Math.cosh(4*et)+b3*Math.sin(6*xi)*Math.cosh(6*et)+b4*Math.sin(8*xi)*Math.cosh(8*et));
+  const E=k0*ah*(et+b1*Math.cos(2*xi)*Math.sinh(2*et)+b2*Math.cos(4*xi)*Math.sinh(4*et)+b3*Math.cos(6*xi)*Math.sinh(6*et)+b4*Math.cos(8*xi)*Math.sinh(8*et))+FE;
+  return [E/1000,N/1000];
+}
+function snapGraph(x,y){ let bd=Infinity,bei=0,bk=0; G.e.forEach((e,ei)=>{ const P=e[2]; for(let k=0;k<P.length/2;k++){ const d=(P[2*k]-x)**2+(P[2*k+1]-y)**2; if(d<bd){bd=d;bei=ei;bk=k;} } }); return {ei:bei,k:bk,d:Math.sqrt(bd)}; }
+function pushFav(f,i){ const [x,y]=wgs2sweref(f.lat,f.lon), s=snapGraph(x,y); PL.push([f.name,'',0,+x.toFixed(2),+y.toFixed(2),f.lat,f.lon,s.ei,s.k,100+i,f.name,f.sub||'']); return s.d; }
+FAVS.forEach(pushFav);
+
+/* ---------- Model data from Rackviddsmodell_elbilar_ny3.xlsx (Indata, Laddning) ---------- */
+const CARS=[
+ {name:'Volvo EX60 P6 RWD',b:80,dc:320,kg:2114,cda:0.676,wltp:620,eta:0.94,crr:0.01,prof:1,pre:true},
+ {name:'Volvo EX60 P10 AWD',b:91,dc:370,kg:2275,cda:0.676,wltp:660,eta:0.94,crr:0.01,prof:1,pre:true},
+ {name:'Volvo EX60 P12 AWD',b:112,dc:370,kg:2330,cda:0.676,wltp:810,eta:0.94,crr:0.01,prof:1,pre:true},
+ {name:'Volvo EX40 Twin Motor Performance 2025',b:79,dc:200,kg:2095,cda:0.84,wltp:539,eta:0.89,crr:0.0102,prof:6,pre:true},
+ {name:'Jaguar I-PACE EV400 2019',b:84.7,dc:104,kg:2133,cda:0.73,wltp:470,eta:0.84,crr:0.011,prof:2,pre:false},
+ {name:'Tesla Model Y Premium AWD 2026',b:79,dc:250,kg:1997,cda:0.58,wltp:629,eta:0.90,crr:0.0095,prof:3,pre:true},
+ {name:'BMW iX3 50 xDrive 2026',b:108.7,dc:400,kg:2210,cda:0.629,wltp:805,eta:0.93,crr:0.0095,prof:5,pre:true},
+ {name:'VW ID.4 GTX 2023',b:77,dc:175,kg:2200,cda:0.73,wltp:509,eta:0.86,crr:0.0107,prof:4,pre:false}
+];
+const CURVE_SOC=[0,5,10,20,30,40,50,60,70,80,90,100];
+const CURVES={ /* C-rate per SOC point, Laddning!B34:G45 */
+ 1:[3.1,3.75,4,4,3.75,3.25,2.75,2.25,1.8,1.4,0.85,0.35],
+ 2:[1.1,1.18,1.18,1.18,1.18,1.18,1.15,0.95,0.72,0.5,0.3,0.12],
+ 3:[3,3.17,3.17,3.17,2.28,1.9,1.52,1.27,1.04,0.85,0.52,0.18],
+ 4:[1.65,1.75,1.75,1.75,1.75,1.75,1.6,1.25,0.95,0.7,0.45,0.18],
+ 5:[3.2,3.68,3.68,3.68,3.3,2.7,2.05,1.6,1.22,0.95,0.55,0.22],
+ 6:[1.84,2.47,2.53,2.34,1.99,1.62,1.3,1.06,0.87,0.68,0.43,0.19]};
+const TF_T=[-20,-10,0,10,20,30,40], TF_V=[0.35,0.5,0.65,0.85,1,1,0.85]; /* Laddning!A50:B56 */
+const K={heatPerC:0.11,cop0:2.3,copSlope:0.09,copMin:1,copMax:3.5,coolOver:25,coolPerC:0.25,copCool:2.5,base:0.5,
+  crrPerC:0.005,battPerC:0.004,battFloor:0.8,markup:0.05,lowMark:0.25,lowV:60,winter:1.25};
+const OPS=['Tesla','Ionity','Mer','Circle K','Recharge','OKQ8','E.ON','InCharge','Allego','Virta','Eways','St1','Jolt','ChargeNode','Övriga'];
+const opKey=op=>OPS.includes(op)?op:'Övriga';
+const PREF_PEN={weak:5,normal:15,strong:45,only:0};
+const PRICE0={'Tesla':4.50,'Ionity':5.79,'Mer':4.68,'Circle K':5.89,'Recharge':5.99,'OKQ8':5.49,'E.ON':5.50,'InCharge':5.50,'Allego':5.50,'Virta':5.50,'Eways':5.50,'St1':5.50,'Jolt':5.50,'ChargeNode':3.90,'Övriga':5.50};
+const LAN={'02':'Blekinge län','03':'Gävleborgs län','05':'Gotlands län','06':'Hallands län','07':'Jämtlands län','08':'Jönköpings län','09':'Kalmar län','10':'Dalarnas län','12':'Kronobergs län','14':'Norrbottens län','15':'Örebro län','16':'Östergötlands län','18':'Södermanlands län','21':'Uppsala län','22':'Värmlands län','23':'Västerbottens län','24':'Västernorrlands län','25':'Västmanlands län','26':'Stockholms län','27':'Skåne län','28':'Västra Götalands län'};
+
+function interp(xs,ys,x){ if(x<=xs[0])return ys[0]; for(let i=1;i<xs.length;i++){ if(x<=xs[i]){const t=(x-xs[i-1])/(xs[i]-xs[i-1]);return ys[i-1]+t*(ys[i]-ys[i-1]);} } return ys[ys.length-1]; }
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+
+/* ---------- Physics (Förbrukning / Ruttberäkning) ---------- */
+function consumption(car,set,v,T,wind){ // kWh/100 km at speed v (km/h), temperature T and headwind (m/s)
+  const rho=101325/(287.05*(273.15+T));
+  const va=v/3.6+(wind===undefined?set.wind:wind);
+  const Fa=0.5*rho*car.cda*va*Math.abs(va);
+  const crr=car.crr*(set.winter?K.winter:1)*(1+K.crrPerC*Math.max(0,20-T));
+  const m=car.kg+set.load;
+  const Fr=crr*m*9.81;
+  const trac=(Fa+Fr)/36/car.eta;
+  const cop=clamp(K.cop0+K.copSlope*T,K.copMin,K.copMax);
+  const heat=Math.max(0,set.cabin-T)*K.heatPerC/cop;
+  const cool=Math.max(0,T-K.coolOver)*K.coolPerC/K.copCool;
+  const aux=(heat+cool+K.base)/v*100;
+  const mark=K.markup+K.lowMark*Math.max(0,(K.lowV-v)/K.lowV);
+  return (trac+aux)*(1+mark);
+}
+const battFactor=T=>Math.max(K.battFloor,1-Math.max(0,10-T)*K.battPerC);
+function chargeTempFactor(car,set,T){
+  if(set.precond&&car.pre) return T<0?0.95:1;
+  return interp(TF_T,TF_V,clamp(T,-20,40));
+}
+function carPower(car){ // kW per 1 % SOC step without charger limit
+  const c=CURVES[car.prof], p=new Float64Array(101);
+  for(let s=0;s<=100;s++) p[s]=Math.min(interp(CURVE_SOC,c,s)*car.b,car.dc);
+  return p;
+}
+function chargeTable(car,kw,G){ // cumulative minutes from 0 % in 1 % steps (Ruttberäkning rows 168–268)
+  const P=car._P||(car._P=carPower(car)); const t=new Float64Array(101);
+  for(let s=1;s<=100;s++){ const p1=Math.min(P[s-1],kw), p2=Math.min(P[s],kw); t[s]=t[s-1]+(car.b/100)/((p1+p2)*G/2)*60; }
+  return t;
+}
+function tAt(tab,s){ s=clamp(s,0,100); const i=Math.min(99,Math.floor(s)); return tab[i]+(s-i)*(tab[i+1]-tab[i]); }
+
+/* ---------- Road graph ---------- */
+const NE=G.e.length;
+const EA=new Int32Array(NE), EB=new Int32Array(NE), CT=[], CL=[], CS=[];
+const ADJ=Array.from({length:G.n},()=>[]), ADJS=Array.from({length:G.n},()=>[]);
+// distance cost for 'shortest' that keeps to larger roads: slow (town) roads are penalised
+const ROADPEN=v=>v>=80?1:v>=70?1.15:v>=60?1.35:1.8;
+G.e.forEach((e,i)=>{
+  EA[i]=e[0]; EB[i]=e[1];
+  const L=e[4], V=e[5]; const ct=new Float64Array(L.length+1), cl=new Float64Array(L.length+1), cs=new Float64Array(L.length+1);
+  for(let k=0;k<L.length;k++){ ct[k+1]=ct[k]+L[k]/V[k]; cl[k+1]=cl[k]+L[k]; cs[k+1]=cs[k]+L[k]*ROADPEN(V[k]); }
+  CT.push(ct); CL.push(cl); CS.push(cs);
+  ADJ[e[0]].push([e[1],i,ct[L.length]]); ADJ[e[1]].push([e[0],i,ct[L.length]]);
+  ADJS[e[0]].push([e[1],i,cs[L.length]]); ADJS[e[1]].push([e[0],i,cs[L.length]]);
+});
+class Heap{constructor(){this.a=[];}push(d,v){const a=this.a;a.push([d,v]);let i=a.length-1;while(i>0){const p=(i-1)>>1;if(a[p][0]<=a[i][0])break;[a[p],a[i]]=[a[i],a[p]];i=p;}}
+ pop(){const a=this.a,top=a[0],last=a.pop();if(a.length){a[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<a.length&&a[l][0]<a[m][0])m=l;if(r<a.length&&a[r][0]<a[m][0])m=r;if(m===i)break;[a[m],a[i]]=[a[i],a[m]];i=m;}}return top;}get size(){return this.a.length;}}
+/* Route metrics: part(ei,i,j) = cost of travelling along edge ei from point i to point j */
+const symMetric=C=>({part:(ei,i,j)=>Math.abs(C[ei][j]-C[ei][i])});
+let ECO=null; // per-car/per-setting cumulative arrays for the energy-based route choice
+function ecoArrays(car,set){
+  const sig=[CARS.indexOf(car),set.sppct,set.spmode,set.spmax,set.t0,set.t1,set.wind,set.load,set.winter,set.cabin,set.recup].join('|');
+  if(ECO&&ECO.sig===sig) return ECO;
+  const T=(set.t0+set.t1)/2, m=car.kg+set.load, EF=[], EBk=[], TT=[];
+  G.e.forEach(e=>{ const L=e[4], V=e[5], Z=e[3], n=L.length; const ef=new Float64Array(n+1), eb=new Float64Array(n+1), tt=new Float64Array(n+1);
+    for(let k=0;k<n;k++){ let v=V[k]*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v);
+      const base=L[k]*consumption(car,set,v,T)/100, dh=Z[k+1]-Z[k];
+      const up=d=>d>0? m*9.81*d/car.eta : m*9.81*d*set.recup;
+      ef[k+1]=ef[k]+Math.max(0,base+up(dh)/3.6e6); eb[k+1]=eb[k]+Math.max(0,base+up(-dh)/3.6e6); tt[k+1]=tt[k]+L[k]/v; }
+    EF.push(ef); EBk.push(eb); TT.push(tt); });
+  ECO={sig,EF,EBk,TT}; return ECO;
+}
+const ecoMetric=(A,lam)=>({part:(ei,i,j)=>(j>i? A.EF[ei][j]-A.EF[ei][i] : A.EBk[ei][i]-A.EBk[ei][j]) + lam*Math.abs(A.TT[ei][j]-A.TT[ei][i])});
+const energyMetric=A=>({part:(ei,i,j)=>(j>i? A.EF[ei][j]-A.EF[ei][i] : A.EBk[ei][i]-A.EBk[ei][j])});
+const piecesCost=(pcs,M)=>pcs.reduce((a,[ei,f,t])=>a+M.part(ei,f,t),0);
+function routeLegM(p,q,M){ // p,q = place records; returns list of pieces [edge, fromPt, toPt]
+  const ep=p[7], ip=p[8], eq=q[7], iq=q[8];
+  const np=CT[ep].length-1, nq=CT[eq].length-1;
+  let best=Infinity, bestEnd=null;
+  if(ep===eq){ best=M.part(ep,ip,iq); bestEnd={direct:true}; }
+  const dist=new Float64Array(G.n).fill(Infinity), prev=new Int32Array(G.n).fill(-1), pedge=new Int32Array(G.n).fill(-1), done=new Uint8Array(G.n);
+  const h=new Heap();
+  const seed=(n,d)=>{ if(d<dist[n]){dist[n]=d;prev[n]=-2;h.push(d,n);} };
+  seed(EA[ep],M.part(ep,ip,0)); seed(EB[ep],M.part(ep,ip,np));
+  const tA=EA[eq], tB=EB[eq], dA=M.part(eq,0,iq), dB=M.part(eq,nq,iq);
+  while(h.size){
+    const [d,u]=h.pop(); if(done[u])continue; done[u]=1; if(d>=best)break;
+    if(u===tA&&d+dA<best){best=d+dA;bestEnd={node:u,side:'a'};}
+    if(u===tB&&d+dB<best){best=d+dB;bestEnd={node:u,side:'b'};}
+    for(const [w,ei] of ADJ[u]){ const last=CT[ei].length-1, fwd=EA[ei]===u; const nd=d+M.part(ei,fwd?0:last,fwd?last:0); if(nd<dist[w]){dist[w]=nd;prev[w]=u;pedge[w]=ei;h.push(nd,w);} }
+  }
+  if(!bestEnd) return null;
+  if(bestEnd.direct) return [[ep,ip,iq]];
+  const chain=[]; let u=bestEnd.node;
+  while(prev[u]!==-2){ const ei=pedge[u], from=prev[u]; const f=EA[ei]===from&&EB[ei]===u; chain.push([ei, f?0:CT[ei].length-1, f?CT[ei].length-1:0]); u=from; }
+  chain.reverse();
+  const pieces=[];
+  pieces.push(u===EA[ep]?[ep,ip,0]:[ep,ip,np]);
+  for(const c of chain) pieces.push(c);
+  pieces.push(bestEnd.side==='a'?[eq,0,iq]:[eq,nq,iq]);
+  return pieces;
+}
+const MAXEXTRA=1.10; // 'Lägst förbrukning' may take at most 10 % longer driving time than the fastest route
+function routeLeg(p,q,mode,ctx){
+  if(mode==='short') return routeLegM(p,q,symMetric(CS));
+  if(mode!=='eco') return routeLegM(p,q,symMetric(CT));
+  const A=ecoArrays(ctx.car,ctx.set), Tm=symMetric(A.TT), En=energyMetric(A);
+  const fast=routeLegM(p,q,Tm); if(!fast) return null;
+  const tmax=piecesCost(fast,Tm)*MAXEXTRA;
+  let bestP=fast, bestE=piecesCost(fast,En);
+  const tryLam=lam=>{ const pc=routeLegM(p,q,ecoMetric(A,lam)); if(!pc) return false; const t=piecesCost(pc,Tm), e=piecesCost(pc,En); if(t<=tmax+1e-9){ if(e<bestE-1e-9){bestE=e;bestP=pc;} return true; } return false; };
+  if(tryLam(0)) return bestP;
+  let lo=0, hi=20; while(!tryLam(hi)&&hi<5000){ lo=hi; hi*=2; }
+  for(let it=0;it<12;it++){ const mid=(lo+hi)/2; if(tryLam(mid)) hi=mid; else lo=mid; }
+  return bestP;
+}
+function buildRoute(stops,mode,ctx){ // stops: array of place records (start, vias..., end)
+  const X=[],Y=[],Z=[],L=[],V=[],EI=[],EK=[],viaKm=[],viaIx=[]; let km=0;
+  function addPt(x,y,z,len,v,ei=-1,ek=-1){ if(X.length){L.push(len);V.push(v);km+=len;} X.push(x);Y.push(y);Z.push(z);EI.push(ei);EK.push(ek); }
+  function addAccess(pl){ // straight access from the place to its snapped graph point
+    const e=G.e[pl[7]], k=pl[8]; const gx=e[2][2*k], gy=e[2][2*k+1], gz=e[3][k];
+    const d=Math.hypot(pl[3]-gx,pl[4]-gy)*1.3;
+    addPt(pl[3],pl[4],gz,0,50); if(d>0.05) addPt(gx,gy,gz,d,50,pl[7],k);
+  }
+  for(let s=0;s<stops.length-1;s++){
+    const p=stops[s], q=stops[s+1];
+    if(s===0) addAccess(p);
+    const pcs=routeLeg(p,q,mode,ctx); if(!pcs) return null;
+    for(const [ei,f,t] of pcs){
+      const e=G.e[ei], P=e[2], Zs=e[3], Ls=e[4], Vs=e[5];
+      if(f===t) continue;
+      const step=t>f?1:-1;
+      for(let k=f+step; step>0?k<=t:k>=t; k+=step){
+        const si=step>0?k-1:k;
+        addPt(P[2*k],P[2*k+1],Zs[k],Ls[si],Vs[si],ei,k);
+      }
+    }
+    // access off the graph to the place itself (then back on for the next leg)
+    const e=G.e[q[7]], k=q[8]; const gx=e[2][2*k], gy=e[2][2*k+1], gz=e[3][k];
+    const d=Math.hypot(q[3]-gx,q[4]-gy)*1.3;
+    if(d>0.05){ addPt(q[3],q[4],gz,d,50); }
+    if(s<stops.length-2){ viaKm.push(km); viaIx.push(X.length-1); if(d>0.05) addPt(gx,gy,gz,d,50,q[7],k); }
+  }
+  // smooth the elevation profile (±2 km window) so DEM noise is not counted as climbing
+  const n=X.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+L[k-1];
+  const Zs=new Array(n); let a=0,b=0,sum=0;
+  for(let k=0;k<n;k++){ while(b<n&&cum[b]<=cum[k]+2){sum+=Z[b];b++;} while(cum[a]<cum[k]-2){sum-=Z[a];a++;} Zs[k]=sum/(b-a); }
+  return {X,Y,Z:Zs,L,V,EI,EK,viaKm,viaIx,km};
+}
+
+/* ---------- Chargers near the route ---------- */
+function chargersAlong(R,set){
+  const n=R.X.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+R.L[k-1];
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity; for(let k=0;k<n;k++){x0=Math.min(x0,R.X[k]);x1=Math.max(x1,R.X[k]);y0=Math.min(y0,R.Y[k]);y1=Math.max(y1,R.Y[k]);}
+  const c=set.corr, out=[];
+  CH.forEach((ch,ci)=>{
+    if(ch[2]<set.minkw) return; if(!opAllowed(set,ch[1])) return;
+    const x=ch[4], y=ch[5]; if(x<x0-c||x>x1+c||y<y0-c||y>y1+c) return;
+    let bd=Infinity,bk=0,bt=0;
+    for(let k=0;k<n-1;k++){
+      const ax=R.X[k],ay=R.Y[k],bx=R.X[k+1],by=R.Y[k+1];
+      if(Math.min(ax,bx)-c>x||Math.max(ax,bx)+c<x||Math.min(ay,by)-c>y||Math.max(ay,by)+c<y) continue;
+      const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy; let t=l2>0?((x-ax)*dx+(y-ay)*dy)/l2:0; t=clamp(t,0,1);
+      const d=Math.hypot(ax+t*dx-x,ay+t*dy-y); if(d<bd){bd=d;bk=k;bt=t;}
+    }
+    if(bd<=c) out.push({ci,ch,k:bk,t:bt,km:cum[bk]+bt*(R.L[bk]||0),off:bd});
+  });
+  out.sort((a,b)=>a.km-b.km);
+  R.cum=cum;
+  return out;
+}
+
+/* ---------- Plan for one car (dynamic programming, as Ruttberäkning) ---------- */
+function plan(car,R,cands,set,extra){
+  const n=R.X.length, km=R.km;
+  const at=(arr,k,t)=>arr[k]+t*((arr[k+1]??arr[k])-arr[k]);
+  const U=new Float64Array(n), Tm=new Float64Array(n), E=new Float64Array(n); // SOC % used, drive minutes, kWh from battery
+  const Ts=new Float64Array(n), Ws=new Float64Array(n); let miss=0, segs=0;
+  const tempAt=x=>set.t0+(set.t1-set.t0)*(km>0?x/km:0);
+  const before=x=>{ let a=0; if(extra) for(const [k0,mn] of extra) if(k0<x) a+=mn; return a; };
+  for(let k=1;k<n;k++){
+    const len=R.L[k-1], vlim=R.V[k-1];
+    let v=vlim*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v);
+    const xm=(R.cum[k-1]+R.cum[k])/2;
+    let T=tempAt(xm), wind=set.wind;
+    if(set.wx&&len>0){ segs++;
+      const w=wxAt(set.wx,(R.X[k-1]+R.X[k])/2,(R.Y[k-1]+R.Y[k])/2,set.depAbs+Tm[k-1]+before(xm));
+      if(w){ const dx=R.X[k]-R.X[k-1], dy=R.Y[k]-R.Y[k-1], dl=Math.hypot(dx,dy)||1; T=w.T; wind=-(w.u*dx+w.v*dy)/dl*set.wxfac; } else miss++; }
+    Ts[k]=T; Ws[k]=wind;
+    const dh=R.Z[k]-R.Z[k-1], m=car.kg+set.load;
+    const pe=dh>0? m*9.81*dh/car.eta : m*9.81*dh*set.recup;
+    const e=Math.max(0,len*consumption(car,set,v,T,wind)/100+pe/3.6e6);
+    E[k]=E[k-1]+e; U[k]=U[k-1]+e/(car.b*battFactor(T))*100; Tm[k]=Tm[k-1]+len/v*60;
+  }
+  const nodes=[{kind:'start',km:0,u:0,tm:0,det:0,dt:0}];
+  for(const c of cands){
+    let T=tempAt(c.km); if(set.wx){ const w=wxAt(set.wx,c.ch[4],c.ch[5],set.depAbs+at(Tm,c.k,c.t)+before(c.km)); if(w) T=w.T; }
+    const dd=c.off*1.3+0.3, cons50=consumption(car,set,50,T,0);
+    nodes.push({kind:'stop',c,km:c.km,u:at(U,c.k,c.t),tm:at(Tm,c.k,c.t),e:at(E,c.k,c.t),det:dd*cons50/100/(car.b*battFactor(T))*100,dt:dd/50*60,detKwh:dd*cons50/100,T,
+      G:chargeTempFactor(car,set,T),kw:c.ch[2],price:set.prices[opKey(c.ch[1])]??set.prices['Övriga'],pen:opPenalty(set,c.ch[1])});
+  }
+  nodes.push({kind:'end',km,u:U[n-1],tm:Tm[n-1],e:E[n-1],det:0,dt:0});
+  const M=nodes.length, tabs=new Map();
+  const tab=nd=>{const key=nd.kw+'|'+nd.G.toFixed(3); if(!tabs.has(key)) tabs.set(key,chargeTable(car,nd.kw,nd.G)); return tabs.get(key);};
+  const use=(i,j)=>nodes[j].u-nodes[i].u+nodes[i].det+nodes[j].det;
+  const f=new Float64Array(M).fill(Infinity), arr=new Float64Array(M), pred=new Int32Array(M).fill(-1), info=new Array(M);
+  f[0]=0; arr[0]=set.s0;
+  for(let j=1;j<M;j++){
+    const last=j===M-1, need0=last?set.sf:set.res;
+    const direct=set.s0-use(0,j);
+    if(direct>=need0-1e-9){ f[j]=0; arr[j]=direct; pred[j]=0; info[j]=null; if(!last) continue; else continue; }
+    for(let i=1;i<j;i++){
+      if(!isFinite(f[i])) continue;
+      const need=need0+use(i,j); if(need>set.maxsoc+1e-9) continue;
+      const a=arr[i]; if(need<=a) continue;
+      const nd=nodes[i], tb=tab(nd);
+      const tc=tAt(tb,need)-tAt(tb,a), kwh=(need-a)/100*car.b, kr=kwh/(1-set.loss)*nd.price;
+      const tstop=tc+set.spill+2*nd.dt;
+      const c= set.opt==='kr' ? kr+0.002*tstop+nd.pen*5 : set.opt==='stopp' ? 1000+tstop+nd.pen : tstop+nd.pen;
+      if(f[i]+c<f[j]-1e-9){ f[j]=f[i]+c; pred[j]=i; arr[j]=last?set.sf:set.res; info[j]={from:i,a,need,tc,kwh,kr,tstop}; }
+    }
+  }
+  if(!isFinite(f[M-1])){
+    // diagnose: longest gap
+    let worst=null;
+    for(let j=1;j<M;j++){ let ok=false; for(let i=0;i<j;i++){ if(i===0? set.s0-use(0,j)>=(j===M-1?set.sf:set.res) : ((j===M-1?set.sf:set.res)+use(i,j)<=set.maxsoc)){ok=true;break;} } if(!ok){worst=j;break;} }
+    return {ok:false,use:E[n-1],avg:E[n-1]/km*100,worst:worst!=null?nodes[worst]:null,prev:worst!=null&&worst>0?nodes[worst-1]:null,E,U,Tm,Ts,Ws,nodes,wxMiss:segs?miss/segs:0};
+  }
+  const chain=[]; let j=M-1; while(j>0){ const i=pred[j]; if(info[j]) chain.push(Object.assign({node:nodes[i],idx:i},info[j])); j=i; }
+  chain.reverse();
+  let charge=0,spill=0,det=0,kwh=0,kr=0; for(const s of chain){charge+=s.tc;spill+=set.spill;det+=2*s.node.dt;kwh+=s.kwh;kr+=s.kr;}
+  const drive=Tm[n-1];
+  const total=drive+charge+spill+det;
+  const finalSoc= chain.length? set.sf : set.s0-use(0,M-1);
+  const useKwh=E[n-1]+chain.reduce((a,s)=>a+2*(s.node.detKwh||0),0);
+  return {ok:true,stops:chain,drive,charge,spill,det,total,kwh,kr,finalSoc,E,U,Tm,Ts,Ws,nodes,use:useKwh,avg:useKwh/km*100,wxMiss:segs?miss/segs:0};
+}
+
+function opAllowed(set,op){ const v=set.opPref[opKey(op)]; if(v==='avoid') return false; if(set.prefmode==='only'&&set.anyPref&&v!=='pref') return false; return true; }
+function opPenalty(set,op){ if(!set.anyPref||set.opPref[opKey(op)]==='pref') return 0; return PREF_PEN[set.prefmode]||0; }
+/* ---------- Weather forecast (Open-Meteo via the Claude app's browser) ---------- */
+let WX=null, wxTab=null, wxBusy=false;
+const absMinutes=(date,time)=>{ const [y,m,d]=(date||'1970-01-01').split('-').map(Number); const [h,mi]=(time||'00:00').split(':').map(Number); return Date.UTC(y,(m||1)-1,d||1,h||0,mi||0)/60000; };
+function sweref2wgs(xk,yk){ // SWEREF 99 TM (km) -> [lat, lon], Lantmäteriets formler
+  const a=6378137, f=1/298.257222101, e2=f*(2-f), n=f/(2-f), k0=0.9996, FE=500000, lon0=15*Math.PI/180;
+  const ar=a/(1+n)*(1+n*n/4+n**4/64);
+  const d1=n/2-2*n*n/3+37*n**3/96-n**4/360, d2=n*n/48+n**3/15-437*n**4/1440, d3=17*n**3/480-37*n**4/840, d4=4397*n**4/161280;
+  const As=e2+e2**2+e2**3+e2**4, Bs=-(7*e2**2+17*e2**3+30*e2**4)/6, Cs=(224*e2**3+889*e2**4)/120, Ds=-(4279*e2**4)/1260;
+  const xi=yk*1000/(k0*ar), eta=(xk*1000-FE)/(k0*ar);
+  const xp=xi-d1*Math.sin(2*xi)*Math.cosh(2*eta)-d2*Math.sin(4*xi)*Math.cosh(4*eta)-d3*Math.sin(6*xi)*Math.cosh(6*eta)-d4*Math.sin(8*xi)*Math.cosh(8*eta);
+  const ep=eta-d1*Math.cos(2*xi)*Math.sinh(2*eta)-d2*Math.cos(4*xi)*Math.sinh(4*eta)-d3*Math.cos(6*xi)*Math.sinh(6*eta)-d4*Math.cos(8*xi)*Math.sinh(8*eta);
+  const ps=Math.asin(Math.sin(xp)/Math.cosh(ep)), dl=Math.atan(Math.sinh(ep)/Math.cos(xp));
+  const sp=Math.sin(ps), lat=ps+sp*Math.cos(ps)*(As+Bs*sp*sp+Cs*sp**4+Ds*sp**6);
+  return [lat*180/Math.PI,(lon0+dl)*180/Math.PI];
+}
+function wxAt(wx,x,y,absMin){ // nearest forecast point within 60 km, linear in time
+  let best=null,bd=Infinity; for(const p of wx.pts){ const d=Math.hypot(p.x-x,p.y-y); if(d<bd){bd=d;best=p;} }
+  if(!best||bd>60) return null;
+  const t=best.t; if(absMin<t[0]-720||absMin>t[t.length-1]+720) return null;
+  if(absMin<=t[0]) return {T:best.T[0],u:best.u[0],v:best.v[0]};
+  if(absMin>=t[t.length-1]){ const j=t.length-1; return {T:best.T[j],u:best.u[j],v:best.v[j]}; }
+  let i=Math.min(t.length-2,Math.max(0,Math.floor((absMin-t[0])/60))); while(i>0&&t[i]>absMin)i--; while(i<t.length-2&&t[i+1]<absMin)i++;
+  const f=(absMin-t[i])/((t[i+1]-t[i])||1);
+  return {T:best.T[i]+f*(best.T[i+1]-best.T[i]), u:best.u[i]+f*(best.u[i+1]-best.u[i]), v:best.v[i]+f*(best.v[i+1]-best.v[i])};
+}
+function wxPoints(){ const R=route, pts=[], step=Math.max(30,R.km/28); let next=0;
+  for(let k=0;k<R.X.length;k++){ if(R.cum[k]>=next||k===R.X.length-1){ pts.push([R.X[k],R.Y[k]]); next=R.cum[k]+step; } }
+  return pts; }
+function setWxStat(msg,bad){ const el=$('#wxstat'); el.textContent=msg; el.style.color=bad?'var(--bad)':''; }
+/* AccuWeather® connector: works in the web and the app for viewers who have added it in claude.ai */
+const ACC='AccuWeather®';
+async function accuCall(mcp,tool,q){ const r=await mcp.callTool(ACC,tool,{queryParams:q},{cache:{staleTime:300000,gcTime:3600000}}); let p=r&&r.payload; if(typeof p==='string'){ try{p=JSON.parse(p);}catch(e){} } return p; }
+const localPart=s=>[String(s).slice(0,10),String(s).slice(11,16)];
+async function fetchAccu(mcp){
+  const R=route, step=Math.max(50,R.km/12), samples=[]; let next=0;
+  for(let k=0;k<R.X.length;k++){ if(R.cum[k]>=next||k===R.X.length-1){ samples.push([R.X[k],R.Y[k]]); next=R.cum[k]+step; } }
+  const towns=[]; for(const [x,y] of samples){ let bi=-1,bd=35; PL.forEach((p,i)=>{ if(p[9]||p[2]<3000) return; const d=Math.hypot(p[3]-x,p[4]-y); if(d<bd){bd=d;bi=i;} }); if(bi>=0&&!towns.includes(bi)) towns.push(bi); }
+  let keys={}; try{ keys=JSON.parse(localStorage.getItem(LS+'.akeys')||'{}')||{}; }catch(e){}
+  const P=[]; let n=0, firstErr=null;
+  const one=async ti=>{ const p=PL[ti], ck=p[0]+'|'+p[1];
+    try{
+      let key=keys[ck];
+      if(!key){ const s=await accuCall(mcp,'widgets-search-claude',{query:p[0]+', Sweden'}); const r=s&&s.results&&s.results[0]; if(!r) return; key=r.locationKey; }
+      const [h,d]=await Promise.all([accuCall(mcp,'widgets-hourly-claude',{locationKey:key,unit:'metric',lang:'sv'}),accuCall(mcp,'widgets-daily-claude',{locationKey:key,unit:'metric',lang:'sv'})]);
+      const info=(h&&h.location&&h.location.info)||(d&&d.location&&d.location.info);
+      if(info&&info.latitude!=null){ const dk=Math.hypot((info.latitude-p[5])*111,(info.longitude-p[6])*111*Math.cos(p[5]*Math.PI/180)); if(dk>40) return; }
+      keys[ck]=key;
+      const rows=[]; // [absMin, T, wind m/s, from-degrees]
+      const hr=(h&&h.hourlyForecast)||[];
+      hr.forEach(o=>{ const [dt,tm]=localPart(o.date); const x=o.extended||{}; rows.push([absMinutes(dt,tm),o.temperatureValue,(x.windValue||0)/3.6,x.windDegrees||0]); });
+      const hEnd=rows.length?rows[rows.length-1][0]:-Infinity;
+      ((d&&d.dailyForecast)||[]).forEach(o=>{ const [dt]=localPart(o.date); const t0=absMinutes(dt,'14:00'), t1=absMinutes(dt,'00:00')+28*60;
+        const wv=w=>{ const m=/([\d.]+)\s*km/.exec((w&&w.wind)||''); return m?parseFloat(m[1])/3.6:0; };
+        if(o.day&&t0>hEnd) rows.push([t0,o.day.temperature,wv(o.day.extended),(o.day.extended&&o.day.extended.windDegrees)||0]);
+        if(o.night&&t1>hEnd) rows.push([t1,o.night.temperature,wv(o.night.extended),(o.night.extended&&o.night.extended.windDegrees)||0]); });
+      rows.sort((a,b)=>a[0]-b[0]); if(rows.length<2) return;
+      P.push({x:p[3],y:p[4],name:p[0],t:rows.map(r=>r[0]),T:rows.map(r=>r[1]??0),u:rows.map(r=>-r[2]*Math.sin(r[3]*Math.PI/180)),v:rows.map(r=>-r[2]*Math.cos(r[3]*Math.PI/180)),spd:rows.map(r=>r[2]),hEnd});
+    }catch(e){ if(!firstErr) firstErr=e; }
+    finally{ n++; setWxStat(`Hämtar prognos från AccuWeather … ${n}/${towns.length} orter`); } };
+  for(let i=0;i<towns.length;i+=3) await Promise.all(towns.slice(i,i+3).map(one));
+  try{ localStorage.setItem(LS+'.akeys',JSON.stringify(keys)); }catch(e){}
+  if(!P.length) throw firstErr||{code:'nodata',message:'AccuWeather gav ingen prognos för orterna längs rutten.'};
+  return P;
+}
+async function fetchOpenMeteo(mcp){
+    const pts=wxPoints(); const ll=pts.map(p=>sweref2wgs(p[0],p[1]));
+    const url=openMeteoUrl(ll);
+    const B='host:claude_browser';
+    const txt=r=>(r&&r.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+    if(wxTab){ try{ await mcp.callTool(B,'navigate',{url,tabId:wxTab}); }catch(e){ wxTab=null; } }
+    if(!wxTab){ const r=await mcp.callTool(B,'preview_start',{url}); const m=/tab-\d+/.exec(txt(r)); wxTab=m?m[0]:null; }
+    let body=null;
+    for(let i=0;i<10&&!body;i++){
+      await new Promise(z=>setTimeout(z,i?1500:800));
+      try{ const r=await mcp.callTool(B,'get_page_text',wxTab?{tabId:wxTab,max_chars:400000}:{max_chars:400000}); const t=txt(r); const a=t.indexOf('['), b=t.lastIndexOf(']'); if(a>=0&&b>a) body=JSON.parse(t.slice(a,b+1)); else if(/"error"\s*:\s*true/.test(t)){ const m=/"reason"\s*:\s*"([^"]+)"/.exec(t); throw {code:'api',message:m?m[1]:'Open-Meteo svarade med ett fel'}; } }
+      catch(e){ if(e&&e.code==='api') throw e; if(e&&e.code&&e.code!=='tool_error') throw e; }
+    }
+    if(!body) throw {code:'parse',message:'Kunde inte läsa svaret från Open-Meteo.'};
+    return parseOpenMeteo(body,pts);
+}
+function openMeteoUrl(ll){
+  const d0=$('#depdate').value; const dd=new Date(d0+'T12:00:00Z'); const d1=new Date(dd.getTime()+2*864e5).toISOString().slice(0,10);
+  return 'https://api.open-meteo.com/v1/forecast?latitude='+ll.map(q=>q[0].toFixed(3)).join(',')+'&longitude='+ll.map(q=>q[1].toFixed(3)).join(',')+
+    '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms&timezone=Europe%2FStockholm&start_date='+d0+'&end_date='+d1;
+}
+/* Webbplatsen: Open-Meteo direkt från webbläsaren (gratis, ingen nyckel) */
+async function fetchOpenMeteoDirect(){
+  const pts=wxPoints(); const ll=pts.map(p=>sweref2wgs(p[0],p[1]));
+  let r; try{ r=await fetch(openMeteoUrl(ll)); }catch(e){ throw {code:'net',message:'Kunde inte nå Open-Meteo. Kontrollera nätverket och försök igen.'}; }
+  let body=null; try{ body=await r.json(); }catch(e){}
+  if(!r.ok||(body&&body.error)) throw {code:'api',message:(body&&body.reason)||('svarade med fel '+r.status)};
+  if(!Array.isArray(body)) body=[body];
+  return parseOpenMeteo(body,pts);
+}
+function parseOpenMeteo(body,pts){
+    const P=body.map((o,i)=>{ const h=o.hourly; const t=h.time.map(s=>{ const [d,tm]=s.split('T'); return absMinutes(d,tm); });
+      const dir=h.wind_direction_10m, sp=h.wind_speed_10m; // direction the wind blows from
+      return {x:pts[i][0],y:pts[i][1],t,T:h.temperature_2m.map(v=>v??0),u:sp.map((w,k)=>-(w??0)*Math.sin((dir[k]??0)*Math.PI/180)),v:sp.map((w,k)=>-(w??0)*Math.cos((dir[k]??0)*Math.PI/180)),spd:sp}; });
+    return P;
+}
+async function fetchWx(){
+  if(wxBusy||!route) return; wxBusy=true; $('#wxfetch').disabled=true; setWxStat('Hämtar prognos …');
+  let src='AccuWeather', accErr=null;
+  try{
+    if(SITE){ const P=await fetchOpenMeteoDirect(); const now=new Date();
+      WX={pts:P,src:'Open-Meteo',fetched:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),date:$('#depdate').value,key:routeKey};
+      try{ localStorage.setItem(LS+'.wx',JSON.stringify(WX)); }catch(e){}
+      changed(false); return; }
+    const mcp=window.claude&&window.claude.use?await window.claude.use('mcp'):null;
+    if(!mcp) throw {code:'no_mcp'};
+    let P=null;
+    try{ P=await fetchAccu(mcp); }
+    catch(e){ accErr=e; const c=e&&e.code;
+      if(c==='server_not_connected'||c==='not_in_manifest'||c==='selection_required'||c==='needs_reauth'||c==='blocked_by_policy'){ src='Open-Meteo'; setWxStat('Hämtar prognos via webbläsaren i Claude-appen …'); P=await fetchOpenMeteo(mcp); }
+      else throw e; }
+    const now=new Date(); WX={pts:P,src,fetched:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),date:$('#depdate').value,key:routeKey};
+    try{ localStorage.setItem(LS+'.wx',JSON.stringify(WX)); }catch(e){}
+    changed(false);
+  }catch(e){
+    const c=e&&e.code, ac=accErr&&accErr.code;
+    const addAcc='Lägg till kopplingen AccuWeather® i claude.ai under Inställningar → Kopplingar och tryck på Hämta prognos igen. Tills dess används temperatur och vind nedan.';
+    const msg= c==='no_mcp'?'Den här vyn kan inte använda kopplingar. Ange temperatur och vind själv.':
+      ac==='needs_reauth'?'Anslut AccuWeather® igen i claude.ai under Inställningar → Kopplingar.':
+      (ac==='not_in_manifest'||ac==='approval_required'||c==='approval_required'||c==='consent_required')?'Sidan fick inte använda AccuWeather®. Tillåt kopplingen när frågan visas och tryck på Hämta prognos igen.':
+      (ac==='server_not_connected'||c==='server_not_connected')?addAcc:
+      c==='cancelled'?'Hämtningen avbröts.': c==='api'?'Open-Meteo: '+e.message: c==='net'?e.message: (e&&e.message)||'Kunde inte hämta prognosen.';
+    setWxStat(msg,true);
+  }finally{ wxBusy=false; $('#wxfetch').disabled=false; }
+}
+function renderWxStatus(){
+  const fc=$('#wxmode').value==='fc'; $('#wxbox').hidden=!fc; $('#manualwx').hidden=fc&&!!WX; $('#manualwind').hidden=fc&&!!WX;
+  if(!fc||wxBusy) return;
+  if(!WX){ setWxStat('Ingen prognos hämtad än. Tryck på Hämta prognos. Tills dess används temperaturerna nedan. '+(SITE?'Prognosen kommer från Open-Meteo.':'Prognosen hämtas från AccuWeather® via din koppling i claude.ai.')); return; }
+  let tmin=Infinity,tmax=-Infinity,wmax=0; WX.pts.forEach(p=>{ p.T.forEach(v=>{tmin=Math.min(tmin,v);tmax=Math.max(tmax,v);}); p.spd.forEach(v=>wmax=Math.max(wmax,v||0)); });
+  const miss=result&&result.res?result.res.wxMiss:0;
+  const hEnd=Math.min(...WX.pts.map(p=>p.hEnd??Infinity));
+  let m=WX.src==='AccuWeather'?`Prognos från AccuWeather hämtad ${WX.fetched} för ${WX.pts.length} orter längs rutten: timvärden de närmaste 12 timmarna, därefter dag- och nattvärden.`:`Prognos från Open-Meteo hämtad ${WX.fetched} för ${WX.pts.length} punkter, ${WX.date} och två dygn framåt.`;
+  if(miss>0.02) m+=` ${Math.round(miss*100)} % av sträckan saknar prognos (ändrad rutt eller avresetid utanför prognosen) och räknas med temperaturerna nedan. Hämta prognosen igen.`;
+  setWxStat(m,miss>0.02); $('#manualwx').hidden=miss<=0.02; $('#manualwind').hidden=miss<=0.02;
+}
+try{ const w=JSON.parse(localStorage.getItem('laddresan.v1.wx')||'null'); if(w&&w.pts) WX=w; }catch(e){}
+/* ---------- State ---------- */
+const SAVED=PL.filter(p=>p[9]);
+const findPlace=name=>PL.findIndex(p=>p[0]===name);
+const state={from:PL.findIndex(p=>p[9]===1), to:PL.findIndex(p=>p[9]===2), vias:[], car:2, opt:'tid', rmode:'fast'};
+const prices=Object.assign({},PRICE0);
+const opPref={}; OPS.forEach(o=>opPref[o]='ok');
+const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','wind','wxfac','recup','cabin','loss'];
+const checks=['winter','precond'];
+const LS='laddresan.v1';
+(function(){ const d=new Date(); const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); $('#depdate').value=iso; })();
+const DEF={state:JSON.parse(JSON.stringify(state)),f:{},c:{},prefmode:$('#prefmode').value}; fields.forEach(f=>DEF.f[f]=$('#'+f).value); checks.forEach(c=>DEF.c[c]=$('#'+c).checked);
+try{ const s=JSON.parse(localStorage.getItem(LS)||'null'); if(s){ if(s.state) Object.assign(state,s.state); if(s.prices) Object.assign(prices,s.prices); if(prices['ChargeNode']===5.5) prices['ChargeNode']=3.90; if(s.opPref) Object.assign(opPref,s.opPref); if(s.f&&s.f.prefmode) $('#prefmode').value=s.f.prefmode;
+  for(const f of fields) if(s.f&&s.f[f]!=null) $('#'+f).value=s.f[f];
+  for(const c of checks) if(s.c&&s.c[c]!=null) $('#'+c).checked=s.c[c]; } }catch(e){}
+if(!(state.from>=-1&&state.from<PL.length)) state.from=-1; if(!(state.to>=-1&&state.to<PL.length)) state.to=-1;
+state.vias=(state.vias||[]).filter(v=>v>=0&&v<PL.length);
+function save(){ try{ const f={},c={}; fields.forEach(k=>f[k]=$('#'+k).value); checks.forEach(k=>c[k]=$('#'+k).checked); f.prefmode=$('#prefmode').value; localStorage.setItem(LS,JSON.stringify({state,prices,opPref,f,c})); }catch(e){} }
+function settings(){
+  const num=id=>parseFloat($('#'+id).value);
+  $('#sppctv').textContent=clamp(num('sppct')||100,100,125)+' %';
+  const s0=clamp(num('s0')||100,1,100), sf=clamp(num('sf')||0,0,90), res=clamp(num('res')||0,0,90), maxsoc=clamp(num('maxsoc')||100,10,100);
+  return {s0,sf,res,maxsoc,t0:num('t0')||0,t1:isNaN(num('t1'))?0:num('t1'),spmode:$('#spmode').value,sppct:clamp(num('sppct')||100,100,125),spmax:num('spmax')||110,
+    dep:$('#dep').value||'08:00',load:num('load')||0,winter:$('#winter').checked,minkw:+$('#minkw').value,corr:+$('#corr').value,spill:num('spill')||0,
+    precond:$('#precond').checked,opPref,prefmode:$('#prefmode').value,anyPref:OPS.some(o=>opPref[o]==='pref'),wind:num('wind')||0,recup:clamp(isNaN(num('recup'))?0.6:num('recup'),0,1),cabin:isNaN(num('cabin'))?21:num('cabin'),
+    loss:clamp((num('loss')||0)/100,0,0.5),prices,opt:state.opt,
+    wx:($('#wxmode').value==='fc'&&WX)?WX:null, depAbs:absMinutes($('#depdate').value,$('#dep').value||'08:00'), wxfac:clamp(isNaN(num('wxfac'))?0.7:num('wxfac'),0,1)};
+}
+
+/* ---------- Formatting ---------- */
+const nf0=new Intl.NumberFormat('sv-SE',{maximumFractionDigits:0}), nf1=new Intl.NumberFormat('sv-SE',{minimumFractionDigits:1,maximumFractionDigits:1});
+const hm=min=>{min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h+' h '+String(m).padStart(2,'0')+' min';};
+const hmShort=min=>{min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h+':'+String(m).padStart(2,'0');};
+function clock(depStr,addMin){ const [h,m]=depStr.split(':').map(Number); let t=Math.round(h*60+m+addMin); const day=Math.floor(t/1440); t=((t%1440)+1440)%1440; return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')+(day>0?' +'+day:''); }
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const placeLabel=p=>p[9]?p[0]:p[0]+(LAN[p[1]]?', '+LAN[p[1]]:'');
+const shortName=p=>p[9]?p[10]:p[0];
+
+/* ---------- Combobox ---------- */
+const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const PN=PL.map(p=>norm(p[0]));
+function combo(input,get,set){
+  const wrap=input.parentElement; const list=document.createElement('ul'); list.className='combo-list'; list.setAttribute('role','listbox'); list.hidden=true; list.id=input.id+'-list'; wrap.appendChild(list);
+  input.setAttribute('role','combobox'); input.setAttribute('aria-controls',list.id); input.setAttribute('aria-expanded','false');
+  let items=[], act=-1;
+  const show=()=>{ const q=norm(input.value.trim()); items=[];
+    const sv=PL.map((p,i)=>i).filter(i=>PL[i][9]&&(!q||PN[i].includes(q)||norm(PL[i][10]||'').includes(q)));
+    let rest=[]; if(q){ PL.forEach((p,i)=>{ if(p[9])return; const n=PN[i]; if(n.startsWith(q)) rest.push([0,-p[2],i]); else if(n.includes(q)) rest.push([1,-p[2],i]); }); rest.sort((a,b)=>a[0]-b[0]||a[1]-b[1]); rest=rest.slice(0,40).map(r=>r[2]); }
+    else rest=PL.map((p,i)=>i).filter(i=>!PL[i][9]).sort((a,b)=>PL[b][2]-PL[a][2]).slice(0,25);
+    let h=''; if(sv.length){ h+='<li class="grp" role="presentation">Sparade platser</li>'; sv.forEach(i=>{items.push(i);h+=`<li role="option" id="${input.id}-o${items.length-1}" data-i="${i}" class="saved">${esc(PL[i][0])}<small>${esc(PL[i][11]||'')}</small></li>`;}); }
+    if(rest.length){ h+='<li class="grp" role="presentation">'+(q?'Orter':'Största orterna')+'</li>'; rest.forEach(i=>{items.push(i);h+=`<li role="option" id="${input.id}-o${items.length-1}" data-i="${i}">${esc(PL[i][0])}<small>${esc(LAN[PL[i][1]]||'')}</small></li>`;}); }
+    if(!items.length) h='<li class="grp" role="presentation">Ingen ort matchar</li>';
+    list.innerHTML=h; list.hidden=false; input.setAttribute('aria-expanded','true'); act=-1; };
+  const hide=()=>{ list.hidden=true; input.setAttribute('aria-expanded','false'); input.removeAttribute('aria-activedescendant'); };
+  const pick=i=>{ set(i); input.value=placeLabel(PL[i]); hide(); };
+  input.value=get()>=0?placeLabel(PL[get()]):'';
+  input.addEventListener('focus',()=>{ input.select(); show(); });
+  input.addEventListener('input',show);
+  input.addEventListener('keydown',e=>{
+    if(list.hidden&&(e.key==='ArrowDown')){show();}
+    const opts=[...list.querySelectorAll('li[role=option]')];
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); act=clamp(act+(e.key==='ArrowDown'?1:-1),0,opts.length-1); opts.forEach((o,k)=>o.setAttribute('aria-selected',k===act)); if(opts[act]){opts[act].scrollIntoView({block:'nearest'}); input.setAttribute('aria-activedescendant',opts[act].id);} }
+    else if(e.key==='Enter'){ e.preventDefault(); const o=opts[act>=0?act:0]; if(o) pick(+o.dataset.i); input.blur(); }
+    else if(e.key==='Escape'){ hide(); input.value=placeLabel(PL[get()]); }
+  });
+  list.addEventListener('mousedown',e=>{ const li=e.target.closest('li[role=option]'); if(li){ e.preventDefault(); pick(+li.dataset.i); input.blur(); } });
+  input.addEventListener('blur',()=>{ setTimeout(()=>{ hide(); if(get()>=0) input.value=placeLabel(PL[get()]); },120); });
+  return {refresh(){ input.value=get()>=0?placeLabel(PL[get()]):''; }};
+}
+const cFrom=combo($('#from'),()=>state.from,i=>{state.from=i;changed(true);});
+const cTo=combo($('#to'),()=>state.to,i=>{state.to=i;changed(true);});
+if(SITE){
+  $('#favbox').hidden=false;
+  const favStat=(m,bad)=>{ const el=$('#favstat'); el.textContent=m; el.style.color=bad?'var(--bad)':''; };
+  const saveFavs=()=>{ try{ localStorage.setItem(FAVK,JSON.stringify(FAVS)); return true; }catch(e){ favStat('Webbläsaren tillåter inte att platser sparas (privat läge?).',true); return false; } };
+  const renderFavs=()=>{ $('#favlist').innerHTML=FAVS.map((f,i)=>`<li><span>${esc(f.name)}<small>${esc(f.addr||f.sub||'')}</small></span><button type="button" data-i="${i}" aria-label="Ta bort ${esc(f.name)}">Ta bort</button></li>`).join(''); };
+  renderFavs(); if(!FAVS.length) $('#favbox').open=false;
+  $('#favlist').addEventListener('click',e=>{ const b=e.target.closest('button[data-i]'); if(!b) return; const i=+b.dataset.i, r=FAV0+i;
+    FAVS.splice(i,1); if(!saveFavs()) return;
+    const fix=v=>v===r?-1:(v>r?v-1:v); state.from=fix(state.from); state.to=fix(state.to); state.vias=state.vias.map(fix).filter(v=>v>=0);
+    save(); location.reload(); });
+  $('#favadd').addEventListener('click',async()=>{
+    const name=$('#favname').value.trim(), addr=$('#favaddr').value.trim();
+    if(!name||!addr){ favStat('Fyll i både namn och adress.',true); return; }
+    if(FAVS.some(f=>f.name.toLowerCase()===name.toLowerCase())){ favStat('Det finns redan en plats som heter så. Välj ett annat namn.',true); return; }
+    const btn=$('#favadd'); btn.disabled=true; favStat('Söker adressen …');
+    try{
+      const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=se&accept-language=sv&q='+encodeURIComponent(addr));
+      const j=r.ok?await r.json():null; const h=j&&j[0];
+      if(!h){ favStat('Hittade inte adressen. Prova med gatuadress och ort, t.ex. "Storgatan 1, Ljungby".',true); return; }
+      const ad=h.address||{}, f={name,addr,lat:+(+h.lat).toFixed(5),lon:+(+h.lon).toFixed(5),sub:ad.city||ad.town||ad.village||ad.municipality||''};
+      const [x,y]=wgs2sweref(f.lat,f.lon); if(snapGraph(x,y).d>30){ favStat('Adressen ligger mer än 30 km från planerarens vägnät och kan inte användas.',true); return; }
+      FAVS.push(f); if(!saveFavs()){ FAVS.pop(); return; }
+      pushFav(f,FAVS.length-1); PN.push(norm(f.name)); renderFavs();
+      $('#favname').value=''; $('#favaddr').value='';
+      favStat(`${f.name} är sparad (${h.display_name.split(',').slice(0,3).join(',')}). Välj den under Sparade platser i Från eller Till.`);
+    }catch(e){ favStat('Kunde inte nå adressökningen. Kontrollera nätverket och försök igen.',true); }
+    finally{ btn.disabled=false; }
+  });
+}
+function renderVias(){
+  const box=$('#vias'); box.innerHTML='';
+  state.vias.forEach((v,k)=>{
+    const row=document.createElement('div'); row.className='field';
+    row.innerHTML=`<label for="via${k}">Mellanstation ${k+1}</label><div class="via-row"><div class="combo"><input type="text" id="via${k}" autocomplete="off" spellcheck="false"></div><button type="button" class="iconbtn" aria-label="Ta bort mellanstation ${k+1}">✕</button></div>`;
+    box.appendChild(row);
+    combo(row.querySelector('input'),()=>state.vias[k],i=>{state.vias[k]=i;changed(true);});
+    row.querySelector('button').addEventListener('click',()=>{state.vias.splice(k,1);renderVias();changed(true);});
+  });
+  $('#addvia').hidden=state.vias.length>=5;
+}
+$('#addvia').addEventListener('click',()=>{ const mid=nearestBetween(); state.vias.push(mid); renderVias(); changed(true); const inp=$('#via'+(state.vias.length-1)); if(inp){inp.focus();} });
+function nearestBetween(){ if(state.from<0||state.to<0){ let bi=0; PL.forEach((p,i)=>{ if(p[2]>PL[bi][2]) bi=i; }); return bi; } const a=PL[state.from], b=PL[state.to]; const mx=(a[3]+b[3])/2,my=(a[4]+b[4])/2; let bi=0,bd=Infinity; PL.forEach((p,i)=>{ if(p[9]||p[2]<20000)return; const d=Math.hypot(p[3]-mx,p[4]-my); if(d<bd){bd=d;bi=i;} }); return bi; }
+$('#swap').addEventListener('click',()=>{ [state.from,state.to]=[state.to,state.from]; state.vias.reverse(); cFrom.refresh(); cTo.refresh(); renderVias(); changed(true); });
+
+/* car select and prices */
+CARS.forEach((c,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=c.name; $('#car').appendChild(o); });
+$('#car').value=state.car;
+function carInfo(){ const c=CARS[state.car]; $('#carinfo').textContent=`${nf1.format(c.b)} kWh netto · max ${c.dc} kW DC · WLTP ${c.wltp} km`+(c.pre?'':' · saknar förkonditionering'); }
+$('#car').addEventListener('change',()=>{ state.car=+$('#car').value; carInfo(); changed(false); });
+document.querySelectorAll('input[name=rmode]').forEach(r=>{ if(r.value===(state.rmode||'fast')) r.checked=true; r.addEventListener('change',()=>{ state.rmode=r.value; changed(true); }); });
+document.querySelectorAll('input[name=opt]').forEach(r=>{ if(r.value===state.opt) r.checked=true; r.addEventListener('change',()=>{ state.opt=r.value; changed(false); }); });
+const opPainters=[];
+(function(){ const box=$('#ops'); const LBL={ok:'Godta',pref:'Föredra',avoid:'Undvik'}, NEXT={ok:'pref',pref:'avoid',avoid:'ok'};
+  OPS.forEach((op,k)=>{ const b=document.createElement('button'); b.type='button'; b.className='opbtn'; b.id='op'+k;
+    const paint=()=>{ b.dataset.v=opPref[op]; b.innerHTML=`<span class="name">${esc(op)}</span><span class="st">${LBL[opPref[op]]}</span>`; b.setAttribute('aria-label',op+': '+LBL[opPref[op]]); };
+    paint(); opPainters.push(()=>{ paint(); inp.value=prices[op].toFixed(2); }); b.addEventListener('click',()=>{ opPref[op]=NEXT[opPref[op]]; paint(); prefSummary(); changed(false); });
+    const inp=document.createElement('input'); inp.type='number'; inp.id='pr'+k; inp.step='0.05'; inp.min='0'; inp.max='20'; inp.value=prices[op].toFixed(2); inp.setAttribute('aria-label','Pris '+op+' kr/kWh');
+    inp.addEventListener('input',()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){prices[op]=v; changed(false);} });
+    box.appendChild(b); box.appendChild(inp); });
+  $('#prefmode').addEventListener('input',()=>{ prefSummary(); changed(false); });
+  prefSummary(); })();
+function prefSummary(){ const p=OPS.filter(o=>opPref[o]==='pref'), a=OPS.filter(o=>opPref[o]==='avoid');
+  $('#prefsum').textContent=(p.length?'Föredrar: '+p.join(', '):'Inga föredragna operatörer valda')+(a.length?' · Undviker: '+a.join(', '):''); }
+fields.concat(checks).forEach(id=>$('#'+id).addEventListener('input',()=>changed(false)));
+carInfo(); renderVias();
+$('#wxfetch').addEventListener('click',fetchWx);
+$('#wxmode').addEventListener('change',()=>{ renderWxStatus(); });
+let resetTimer=0;
+$('#reset').addEventListener('click',()=>{
+  const b=$('#reset');
+  if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tryck igen för att rensa'; clearTimeout(resetTimer); resetTimer=setTimeout(()=>{ b.classList.remove('armed'); b.textContent='↺ Rensa rutt'; },4000); return; }
+  clearTimeout(resetTimer); b.classList.remove('armed');
+  state.from=-1; state.to=-1; state.vias=[];
+  cFrom.refresh(); cTo.refresh(); renderVias(); $('#pop').hidden=true;
+  routeKey=''; changed(true);
+  b.textContent='Rutten är rensad'; resetTimer=setTimeout(()=>{ b.textContent='↺ Rensa rutt'; },2000);
+});
+
+/* ---------- Compute ---------- */
+let route=null, routeKey='', timer=0, result=null, routeAlt=null, routeSet=null;
+function changed(routeChanged){ save(); clearTimeout(timer); timer=setTimeout(()=>compute(routeChanged),routeChanged?10:60); }
+function compute(){
+  if(state.from<0||state.to<0){ route=null; routeKey=''; result=null; renderEmpty(); return; }
+  const pts=[state.from,...state.vias,state.to];
+  const key=pts.join(',');
+  const set=settings(); const ctx={car:CARS[state.car],set};
+  const esig=[state.car,set.sppct,set.spmode,set.spmax,set.t0,set.t1,set.wind,set.load,set.winter,set.cabin,set.recup].join('|');
+  const fullKey=key+'|'+state.rmode+'|'+esig;
+  if(fullKey!==routeKey){ const stops=pts.map(i=>PL[i]); const prevKey=routeKey.split('|').slice(0,2).join('|');
+    const R={}; for(const md of ['fast','short','eco']) R[md]=buildRoute(stops,md,ctx);
+    if(prevKey!==key+'|'+state.rmode) fitPending=true;
+    route=R[state.rmode]; routeKey=fullKey;
+    const sum=r=>{ if(!r) return null; let min=0,kwh=0; const Tavg=(set.t0+set.t1)/2, car=ctx.car, m=car.kg+set.load;
+      for(let k=0;k<r.L.length;k++){ let v=r.V[k]*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v); min+=r.L[k]/v*60;
+        const dh=r.Z[k+1]-r.Z[k], pe=dh>0? m*9.81*dh/car.eta : m*9.81*dh*set.recup; kwh+=Math.max(0,r.L[k]*consumption(car,set,v,Tavg)/100+pe/3.6e6); }
+      return {km:r.km,min,kwh}; };
+    const SF=sum(R.fast), SS=sum(R.short); let SE=sum(R.eco);
+    // the eco search uses raw edge heights; keep whichever candidate is truly lowest within the time cap
+    for(const [md,Sx] of [['short',SS],['fast',SF]]){ if(Sx&&SE&&SF&&Sx.min<=SF.min*MAXEXTRA+0.01&&Sx.kwh<SE.kwh){ R.eco=R[md]; SE=Sx; } }
+    if(state.rmode==='eco') route=R.eco;
+    routeSet=R;
+    routeAlt={fast:SF,short:SS,eco:SE}; }
+  if(!route){ showStatus('Kunde inte hitta någon väg mellan de valda platserna.',true); return; }
+  const cands=chargersAlong(route,set);
+  const car=CARS[state.car];
+  const run=c=>{ const r1=plan(c,route,cands,set,null); if(!set.wx||!r1.ok||!r1.stops.length) return r1; return plan(c,route,cands,set,r1.stops.map(s=>[s.node.km,s.tstop])); };
+  const res=run(car);
+  const all=CARS.map((c,i)=>i===state.car?res:run(c));
+  result={set,car,res,all,cands,pts};
+  render();
+}
+function renderRmHint(){
+  const a=routeAlt; if(!a||!a.fast){ $('#rmhint').textContent='Kortaste väg håller sig till större vägar. Lägst förbrukning tar högst 10 % längre körtid än snabbaste.'; return; }
+  const f=x=>x?`${nf0.format(x.km)} km, ${hmShort(x.min)} h, ${nf0.format(x.kwh)} kWh`:'–';
+  $('#rmhint').innerHTML=`Snabbaste: ${f(a.fast)}<br>Kortaste: ${f(a.short)}<br>Lägst förbrukning: ${f(a.eco)}<br><span style="opacity:.8">Lägst förbrukning tar högst 10 % längre körtid än snabbaste. Kortaste väg håller sig till större vägar.</span>`;
+}
+function renderEmpty(){
+  $('#signline').innerHTML='<span>Välj start och mål</span>';
+  showStatus('',false);
+  $('#tiles').innerHTML='<div class="tile" style="grid-column:1/-1"><div class="k">Ingen rutt vald</div><div class="v">Välj start och mål</div><div class="s">Sök efter en ort eller en sparad plats i fälten Från och Till. Inställningar för bil, laddning och operatörer ligger kvar.</div></div>';
+  $('#plan').innerHTML=''; $('#gmaps').innerHTML=''; $('#chart').innerHTML='<div class="hint">Laddnivån visas när en rutt är vald.</div>'; $('#cmp').innerHTML=''; $('#pop').hidden=true;
+  gRoute.innerHTML=''; setVB(250,-7700,700,1600);
+  $('#notes').innerHTML='<p>Välj en rutt för att se hur planeraren räknar.</p>';
+}
+function showStatus(msg,bad){ const s=$('#status'); s.hidden=!msg; s.className='status'+(bad?' bad':''); s.innerHTML=msg||''; }
+
+/* ---------- Render ---------- */
+function render(){
+  const {set,car,res,all,cands,pts}=result; const R=route;
+  const a=PL[pts[0]], b=PL[pts[pts.length-1]];
+  $('#signline').innerHTML=`<span>${esc(shortName(a))}</span><span aria-hidden="true">→</span><span>${esc(shortName(b))}</span><span class="dist">${nf0.format(R.km)} km</span>`;
+  if(!res.ok){
+    const w=res.worst; let msg=`<b>${esc(car.name)} klarar inte rutten med dessa inställningar.</b> `;
+    if(w&&res.prev){ msg+=`Längsta sträckan utan nåbar laddare ligger kring km ${nf0.format(res.prev.km)}–${nf0.format(w.km)}. `; }
+    msg+='Prova att öka avståndet från vägen, sänka reserven, höja högsta laddnivå, tillåta laddare med lägre effekt'+(set.prefmode==='only'||OPS.some(o=>opPref[o]==='avoid')?' eller tillåta fler operatörer':'')+'.';
+    showStatus(msg,true);
+  } else showStatus('',false);
+  renderRmHint(); renderWxStatus(); renderTiles(); renderPlan(); renderChart(); renderCmp(); drawDynamic(); renderNotes();
+}
+function renderTiles(){
+  const {set,res}=result; const R=route;
+  if(!res.ok){ $('#tiles').innerHTML=`<div class="tile"><div class="k">Sträcka</div><div class="v">${nf0.format(R.km)} km</div><div class="s">Körtid ${hm(res.Tm[res.Tm.length-1])}</div></div><div class="tile"><div class="k">Förbrukning hela resan</div><div class="v">${nf0.format(res.use)} kWh</div><div class="s">${nf1.format(res.avg)} kWh/100 km</div></div>`; return; }
+  const t=[
+    ['main','Total restid',hm(res.total),`Framme ${clock(set.dep,res.total)}`],
+    ['','Körtid',hm(res.drive),`${nf0.format(R.km)} km · snitt ${nf0.format(R.km/(res.total/60))} km/h dörr till dörr`],
+    ['','Laddstopp',String(res.stops.length),res.stops.length?`${nf0.format(res.charge)} min laddning + ${nf0.format(res.spill+res.det)} min spill`:'Räcker hela vägen'],
+    ['','Förbrukning hela resan',`${nf0.format(res.use)} kWh`,`${nf1.format(res.avg)} kWh/100 km · ${nf0.format(res.use/(1-set.loss))} kWh från elnätet inkl. laddförluster`],
+    ['','Laddat på vägen',`${nf0.format(res.kwh)} kWh`,`${nf0.format(res.kr)} kr · ${nf0.format(res.finalSoc)} % vid målet`]];
+  $('#tiles').innerHTML=t.map(([c,k,v,s])=>`<div class="tile ${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+// Google Maps picks its own fastest road between the points it is given. To make it follow the chosen
+// route (shortest / lowest consumption), pass-through points are added:
+//  1. between each pair of fixed points, the fastest road in our own network is compared with the chosen
+//     route, and a point is put where they part; repeated until they agree;
+//  2. remaining room in the leg's link (9 points) is spread over the longest gaps.
+// Points are only put on ordinary two-way roads (30–90 km/h, no motorway within 3 km, not inside a town
+// of 15 000+ inhabitants): on a motorway or a ramp a point can land on the carriageway for the opposite
+// direction, which would make Google turn around.
+const SHAPE_TOWNS=PL.filter(p=>p[2]>=15000).map(p=>[p[3],p[4],p[2]>=400000?18:p[2]>=100000?10:p[2]>=50000?8:5]);
+function shapeCtx(R){
+  if(R._sh) return R._sh;
+  const n=R.X.length, cum=new Float64Array(n); for(let k=1;k<n;k++) cum[k]=cum[k-1]+R.L[k-1];
+  const vHi=k=>Math.max(R.V[Math.max(0,k-1)]||0,R.V[Math.min(k,R.V.length-1)]||0), vLo=k=>Math.min(R.V[Math.max(0,k-1)]||99,R.V[Math.min(k,R.V.length-1)]||99);
+  // highest limit within ±3 km along the route: keeps points away from motorways and their ramps
+  const wmax=new Float64Array(n); { let a=0; for(let k=0;k<n;k++){ while(cum[a]<cum[k]-3) a++; let m=0; for(let j=a;j<n-1&&cum[j]<=cum[k]+3;j++) m=Math.max(m,R.V[j]); wmax[k]=m; } }
+  // towns: motorways through towns are often signed 70–90, so no points near them (radius by population)
+  const TOWN=SHAPE_TOWNS;
+  const inTown=k=>TOWN.some(([x,y,r])=>Math.abs(R.X[k]-x)<r&&Math.abs(R.Y[k]-y)<r&&Math.hypot(R.X[k]-x,R.Y[k]-y)<r);
+  // ordinary two-way roads: 30–90 km/h, not at a junction, no 110+ road within 3 km, not in a larger town
+  const ok=k=>R.EI[k]>=0&&R.EK[k]>0&&R.EK[k]<G.e[R.EI[k]][4].length&&vLo(k)>=30&&vHi(k)<=91&&wmax[k]<=101&&!inTown(k);
+  const firstG=R.EI.findIndex(e=>e>=0); let lastG=n-1; while(lastG>0&&R.EI[lastG]<0) lastG--;
+  const ixAt=km=>{ let lo=0,hi=n-1; while(lo<hi){const m=(lo+hi)>>1; if(cum[m]<km) lo=m+1; else hi=m;} while(lo<lastG&&R.EI[lo]<0) lo++; return Math.min(Math.max(lo,firstG),lastG); };
+  // inside a short slow stretch next to a motorway: town streets are fine even close to the motorway
+  const okSlow=k=>R.EI[k]>=0&&R.EK[k]>0&&R.EK[k]<G.e[R.EI[k]][4].length&&vLo(k)>=30&&vHi(k)<=70&&!inTown(k);
+  return R._sh={n,cum,ok,okSlow,firstG,lastG,ixAt};
+}
+// pass-through points for the stretch of route between point indices i0 and i1 (fixed = indices that are
+// already waypoints, incl. i0 and i1); at most 'budget' points
+function shapeRange(R,i0,i1,fixedIx,budget){
+  const C=shapeCtx(R), {cum,ok,okSlow}=C; if(budget<=0) return [];
+  const fixed=new Set(fixedIx); let anc=[...fixed].sort((a,b)=>a-b);
+  const shape=new Set(), M=symMetric(CT), key=(x,y)=>x.toFixed(3)+','+y.toFixed(3);
+  const rec=i=>[0,0,0,R.X[i],R.Y[i],0,0,R.EI[i],R.EK[i]];
+  const pick=(a,b,target,win,f=ok)=>{ let best=-1,bd=1e9; for(let k=a;k<=b;k++){ if(!f(k)||fixed.has(k)||shape.has(k)) continue; const d=Math.abs(cum[k]-target); if(d<=win&&d<bd){best=k;bd=d;} } return best; };
+  const add=k=>{ shape.add(k); anc.push(k); anc.sort((p,q)=>p-q); };
+  // a point on a short slow stretch between two fast roads (e.g. through a town next to the motorway) needs a
+  // point near each end of the stretch, otherwise Google drives in to the point and back out the same way
+  const R_V=k=>R.V[Math.min(Math.max(k,0),R.V.length-1)];
+  const addSmart=k=>{
+    let a=k,b=k; while(a>i0&&R_V(a-1)<=90) a--; while(b<i1&&R_V(b)<=90) b++;
+    const L=cum[b]-cum[a];
+    const fastNear=(k0,dir)=>{ for(let k=k0;k>=i0&&k<i1&&Math.abs(cum[k]-cum[k0])<=1.5;k+=dir) if(R_V(k)>=100) return true; return false; };
+    if(L<12&&a>i0&&b<i1&&fastNear(a-1,-1)&&fastNear(b,1)){
+      const k1=pick(a,b,cum[a]+L*0.25,L*0.2,okSlow); if(k1<0) return false; shape.add(k1);
+      const k2=pick(a,b,cum[a]+L*0.75,L*0.2,okSlow); shape.delete(k1);
+      if(k2<0||shape.size+2>budget) return false; add(k1); add(k2); return true; }
+    add(k); return true; };
+  // 1. agree with our own fastest road between consecutive points
+  const tried=new Set();
+  for(let guard=0;guard<40&&shape.size<budget;guard++){
+    let added=false;
+    for(let j=0;j<anc.length-1&&!added;j++){
+      const ia=anc[j], ib=anc[j+1]; if(ib-ia<2) continue;
+      const pcs=routeLegM(rec(ia),rec(ib),M); if(!pcs) continue;
+      const on=new Set(); for(const [ei,f,t] of pcs){ const P=G.e[ei][2], st=t>=f?1:-1; for(let k=f;st>0?k<=t:k>=t;k+=st) on.add(key(P[2*k],P[2*k+1])); }
+      let a=-1, runs=[];
+      for(let k=ia;k<=ib;k++){ const off=R.EI[k]>=0&&!on.has(key(R.X[k],R.Y[k])); if(off&&a<0)a=k; if((!off||k===ib)&&a>=0){ runs.push([a,off?k:k-1]); a=-1; } }
+      runs=runs.filter(([x,y])=>cum[y]-cum[x]>=0.5&&!tried.has(x+'-'+y)).sort((p,q)=>(cum[q[1]]-cum[q[0]])-(cum[p[1]]-cum[p[0]]));
+      for(const [x,y] of runs){ tried.add(x+'-'+y); const L=cum[y]-cum[x]; let k=pick(x,y,cum[x]+L/2,L/2); if(k<0) k=pick(x,y,cum[x]+L/2,L/2,okSlow); if(k>=0&&addSmart(k)){ added=true; break; } }
+    }
+    if(!added) break;
+  }
+  // 2. spread the remaining points over the longest gaps
+  const dead=new Set();
+  while(shape.size<budget){
+    let bj=-1,bg=8; for(let j=0;j<anc.length-1;j++){ const g=cum[anc[j+1]]-cum[anc[j]]; if(g>bg&&!dead.has(anc[j]+'-'+anc[j+1])){bg=g;bj=j;} }
+    if(bj<0) break; const ia=anc[bj], ib=anc[bj+1], mid=(cum[ia]+cum[ib])/2;
+    let k=pick(ia,ib,mid,bg/4); if(k<0) k=pick(ia,ib,mid,bg/2-3); // widen to the whole gap, 3 km from its ends
+    if(k<0||!addSmart(k)){ dead.add(ia+'-'+ib); continue; }
+  }
+  return [...shape];
+}
+// One Google Maps link per leg between charging stops (Google takes at most 9 waypoints per link).
+function gmapsLinks(){
+  const {res,pts}=result, R=route, shaping=!!(routeSet&&R!==routeSet.fast&&R.EI);
+  const C=shapeCtx(R), ll=p=>p.ll[0].toFixed(5)+','+p.ll[1].toFixed(5);
+  const plLL=i=>[PL[i][5],PL[i][6]];
+  const ends=[{km:-1,ll:plLL(pts[0]),ix:C.firstG,name:PL[pts[0]][0]}];
+  if(res.ok) res.stops.forEach(s=>ends.push({km:s.node.km,ll:[s.node.c.ch[6],s.node.c.ch[7]],ix:C.ixAt(s.node.km),name:s.node.c.ch[0]}));
+  ends.push({km:1e9,ll:plLL(pts[pts.length-1]),ix:C.lastG,name:PL[pts[pts.length-1]][0]});
+  const vias=route.viaKm.map((k,i)=>({km:k,ll:plLL(pts[i+1]),ix:C.ixAt(k)}));
+  const out=[]; let nsh=0;
+  for(let e=0;e<ends.length-1;e++){
+    const A=ends[e], B=ends[e+1], inner=vias.filter(v=>v.km>A.km&&v.km<B.km);
+    let wps=inner.slice();
+    if(shaping){ const sh=shapeRange(R,A.ix,B.ix,[A.ix,B.ix,...inner.map(v=>v.ix)],9-inner.length); nsh+=sh.length; sh.forEach(k=>wps.push({km:C.cum[k],ll:sweref2wgs(R.X[k],R.Y[k])})); }
+    wps.sort((x,y)=>x.km-y.km);
+    const seq=[A,...wps,B]; let i=0;
+    while(i<seq.length-1){ const j=Math.min(seq.length-1,i+10); const wp=seq.slice(i+1,j).map(ll).join('|');
+      out.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(ll(seq[i]))+'&destination='+encodeURIComponent(ll(seq[j]))+(wp?'&waypoints='+encodeURIComponent(wp):''),to:j===seq.length-1?B.name:''}); i=j; }
+  }
+  gmapsLinks.nsh=nsh; return out;
+}
+function legWx(k0,k1){
+  const R=route, r=result.res; let L=0,T=0,W=0,Tmin=Infinity,Tmax=-Infinity;
+  for(let k=1;k<R.X.length;k++){ const xm=(R.cum[k-1]+R.cum[k])/2; if(xm<k0||xm>k1) continue; const l=R.L[k-1]; L+=l; T+=r.Ts[k]*l; W+=r.Ws[k]*l; Tmin=Math.min(Tmin,r.Ts[k]); Tmax=Math.max(Tmax,r.Ts[k]); }
+  if(L<=0) return ''; T/=L; W/=L;
+  const tt=Math.round(Tmax)-Math.round(Tmin)>=2?`${nf0.format(Tmin)} till ${nf0.format(Tmax)} °C`:`${nf0.format(T)} °C`;
+  const ww=Math.abs(W)<0.3?'ingen vind av betydelse':(W>0?'motvind ':'medvind ')+nf1.format(Math.abs(W))+' m/s';
+  return ` · ${tt} · ${ww}`;
+}
+function altText(s){
+  const alts=result.cands.filter(c=>c.ci!==s.node.c.ci&&Math.abs(c.km-s.node.km)<=25).sort((a,b)=>b.ch[2]-a.ch[2]||Math.abs(a.km-s.node.km)-Math.abs(b.km-s.node.km)).slice(0,3);
+  if(!alts.length) return '';
+  return `<div class="meta" style="margin-top:6px">Alternativ i närheten: ${alts.map(c=>{const d=c.km-s.node.km; return `${esc(c.ch[0])} (${esc(c.ch[1])}, ${c.ch[2]} kW, ${d>=0?'+':'−'}${nf0.format(Math.abs(d))} km)`;}).join(' · ')}</div>`;
+}
+function renderPlan(){
+  const {set,res,pts}=result; const R=route;
+  const links=gmapsLinks();
+  $('#gmaps').innerHTML=links.map((u,k)=>`<a class="btn primary" href="${u.url}" title="${links.length>1&&u.to?'Etapp till '+esc(u.to):'Hela resan'}" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>${links.length>1?'Etapp '+(k+1)+(u.to?': till '+esc(u.to):''):'Öppna i Google Maps'}</a>`).join('');
+  const nsh=gmapsLinks.nsh||0;
+  if(nsh||links.length>1) $('#gmaps').insertAdjacentHTML('beforeend',`<div class="meta" style="flex-basis:100%;margin-top:4px">${links.length>1?'En länk per etapp mellan laddstoppen.':''}${nsh?`${links.length>1?' Länkarna':'Länken'} har ${nsh} passagepunkt${nsh>1?'er':''} så att Google Maps följer den valda rutten. Google visar dem som stopp, kör bara förbi.`:''}</div>`);
+  if(!res.ok){ $('#plan').innerHTML=''; return; }
+  const ev=[]; // events along route
+  ev.push({type:'start',km:0});
+  route.viaKm.forEach((k,i)=>ev.push({type:'via',km:k,place:PL[pts[i+1]]}));
+  res.stops.forEach((s,i)=>ev.push({type:'stop',km:s.node.km,s,n:i+1}));
+  ev.push({type:'end',km:R.km});
+  ev.sort((a,b)=>a.km-b.km||(a.type==='end')-(b.type==='end'));
+  // time + SOC bookkeeping
+  let extra=0, socDep=set.s0, uDep=0, detDep=0; let h=''; let prevKm=0, prevTm=0;
+  const Tm=res.Tm, U=res.U;
+  const atKm=(arr,km)=>{ let lo=0,hi=R.cum.length-1; while(hi-lo>1){const m=(lo+hi)>>1; if(R.cum[m]<=km)lo=m;else hi=m;} const span=R.cum[hi]-R.cum[lo]; const t=span>0?(km-R.cum[lo])/span:0; return arr[lo]+t*(arr[hi]-arr[lo]); };
+  for(const e of ev){
+    const tm=atKm(Tm,e.km)+extra;
+    if(e.type!=='start'){ const dkm=e.km-prevKm, dt=tm-prevTm; h+=`<li class="legrow"><span></span><span class="dot"></span><div class="leg">${nf0.format(dkm)} km · ${hmShort(dt)} h körning${legWx(prevKm,e.km)}</div></li>`; }
+    if(e.type==='start'){ const p=PL[pts[0]];
+      h+=`<li><div class="t">${clock(set.dep,0)}</div><div class="dot"><span></span></div><div class="body"><div class="ttl">${esc(shortName(p))}</div><div class="meta">Avresa med ${nf0.format(set.s0)} % · ${esc(result.car.name)}</div></div></li>`; }
+    else if(e.type==='via'){ const soc=socDep-(atKm(U,e.km)-uDep)-detDep;
+      h+=`<li class="via"><div class="t">${clock(set.dep,tm)}</div><div class="dot"><span></span></div><div class="body"><div class="ttl">${esc(shortName(e.place))}</div><div class="meta">Mellanstation · km ${nf0.format(e.km)} · ca ${nf0.format(soc)} %</div></div></li>`; }
+    else if(e.type==='stop'){ const s=e.s, c=s.node.c.ch; const arrive=tm+s.node.dt;
+      const gm='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(c[6].toFixed(5)+','+c[7].toFixed(5));
+      h+=`<li class="stop"><div class="t">${clock(set.dep,arrive)}</div><div class="dot"><span>${e.n}</span></div><div class="body"><div class="ttl">${esc(c[0])}</div>
+        <div class="meta">${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag · km ${nf0.format(e.km)}${s.node.c.off>0.3?' · '+nf1.format(s.node.c.off)+' km från vägen':''} · <a class="small" href="${gm}" target="_blank" rel="noopener">Visa plats</a></div>
+        <div class="chips"><span class="chip soc">${nf0.format(s.a)} → ${nf0.format(s.need)} %</span>${result.set.anyPref&&opPref[opKey(c[1])]==='pref'?'<span class="chip pref">Föredragen</span>':''}<span class="chip">${nf0.format(s.tc)} min laddning</span><span class="chip">${nf1.format(s.kwh)} kWh</span><span class="chip">${nf0.format(s.kr)} kr</span><span class="chip">vidare ${clock(set.dep,arrive+s.tc+set.spill+s.node.dt)}</span></div>${altText(s)}</div></li>`;
+      extra+=s.tstop; socDep=s.need; uDep=s.node.u; detDep=s.node.det; }
+    else { const p=PL[pts[pts.length-1]];
+      h+=`<li><div class="t">${clock(set.dep,tm)}</div><div class="dot"><span style="border-color:var(--ink)"></span></div><div class="body"><div class="ttl">${esc(shortName(p))}</div><div class="meta">Framme med ${nf0.format(res.finalSoc)} % · total restid ${hm(res.total)}</div></div></li>`; }
+    prevKm=e.km; prevTm=e.type==='stop'?tm+e.s.tstop:tm;
+  }
+  $('#plan').innerHTML=h;
+}
+function renderChart(){
+  const {set,res}=result; const R=route; const W=Math.max(320,Math.round($('#chart').clientWidth||900)),H=W<600?200:220,ml=46,mr=12,mt=14,mb=26; const iw=W-ml-mr, ih=H-mt-mb;
+  const X=km=>ml+iw*(R.km>0?km/R.km:0), Ys=s=>mt+ih*(1-s/100);
+  let zmin=Infinity,zmax=-Infinity; R.Z.forEach(z=>{zmin=Math.min(zmin,z);zmax=Math.max(zmax,z);}); const zr=Math.max(200,zmax-0);
+  let elev=`M${X(0)},${mt+ih}`; for(let k=0;k<R.Z.length;k+=Math.max(1,Math.floor(R.Z.length/600))) elev+=`L${X(R.cum[k]).toFixed(1)},${(mt+ih-ih*0.45*(R.Z[k]/zr)).toFixed(1)}`; elev+=`L${X(R.km)},${mt+ih}Z`;
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Laddnivå och höjdprofil längs rutten"><path d="${elev}" fill="var(--line)" opacity=".7"/>`;
+  for(const s of [0,20,40,60,80,100]) g+=`<line x1="${ml}" x2="${W-mr}" y1="${Ys(s)}" y2="${Ys(s)}" stroke="var(--line)" stroke-width="1"/><text x="${ml-6}" y="${Ys(s)+4}" text-anchor="end">${s} %</text>`;
+  const step=R.km>800?200:R.km>300?100:R.km>120?50:20; for(let k=0;k<=R.km;k+=step) g+=`<text x="${X(k)}" y="${H-8}" text-anchor="middle">${k} km</text>`;
+  g+=`<line x1="${ml}" x2="${W-mr}" y1="${Ys(set.res)}" y2="${Ys(set.res)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1" opacity=".7"/><text x="${W-mr}" y="${Ys(set.res)-4}" text-anchor="end">reserv ${set.res} %</text>`;
+  if(res.ok){
+    let p=''; let soc=set.s0, u0=0, d0=0; let si=0; const stops=res.stops;
+    const pts=[]; for(let k=0;k<R.X.length;k++){
+      while(si<stops.length&&R.cum[k]>=stops[si].node.km){ const s=stops[si]; const before=soc-(s.node.u-u0)-d0-s.node.det; pts.push([s.node.km,before]); pts.push([s.node.km,s.need]); soc=s.need; u0=s.node.u; d0=s.node.det; si++; }
+      pts.push([R.cum[k],soc-(res.U[k]-u0)-d0]); }
+    const dec=Math.max(1,Math.floor(pts.length/900)); p=pts.filter((q,k)=>k%dec===0||k===pts.length-1||(k>0&&pts[k-1][0]===q[0])||(k<pts.length-1&&pts[k+1][0]===q[0])).map((q,k)=>(k?'L':'M')+X(q[0]).toFixed(1)+','+Ys(q[1]).toFixed(1)).join('');
+    g+=`<path d="${p}" fill="none" stroke="var(--sign)" stroke-width="2.5" stroke-linejoin="round"/>`;
+    stops.forEach((s,i)=>{ g+=`<circle cx="${X(s.node.km)}" cy="${Ys(s.need)}" r="9" fill="var(--charge)"/><text x="${X(s.node.km)}" y="${Ys(s.need)+4}" text-anchor="middle" style="fill:var(--charge-ink);font-weight:700">${i+1}</text>`; });
+  }
+  g+='</svg>'; $('#chart').innerHTML=g;
+}
+let cmpSort={key:null,dir:1};
+const CMPCOL=[['name','Bil'],['stops','Laddstopp'],['charge','Laddtid'],['total','Total restid'],['arrive','Framme'],['use','Förbrukning'],['avg','kWh/100 km'],['kwh','Laddat'],['kr','Kostnad'],[null,'Laddplatser']];
+function renderCmp(){
+  const {all,set}=result; let best=-1,bt=Infinity; all.forEach((r,i)=>{ if(r.ok&&r.total<bt){bt=r.total;best=i;} });
+  const val=(r,i,k)=>k==='name'?CARS[i].name:k==='use'||k==='avg'?r[k]:(!r.ok?null:k==='stops'?r.stops.length:k==='arrive'?r.total:r[k]);
+  const order=all.map((r,i)=>i);
+  if(cmpSort.key){ const k=cmpSort.key, d=cmpSort.dir; order.sort((a,b)=>{ const va=val(all[a],a,k), vb=val(all[b],b,k); if(va==null&&vb==null) return a-b; if(va==null) return 1; if(vb==null) return -1; if(typeof va==='string') return d*va.localeCompare(vb,'sv'); return d*(va-vb)||a-b; }); }
+  let h='<thead><tr>'+CMPCOL.map(([k,l])=>{ if(!k) return `<th style="text-align:left">${l}</th>`; const on=cmpSort.key===k; const ar=on?(cmpSort.dir>0?'ascending':'descending'):'none';
+    return `<th aria-sort="${ar}"><button type="button" class="thbtn" data-k="${k}">${l}<span class="arr" aria-hidden="true">${on?(cmpSort.dir>0?'▲':'▼'):'↕'}</span></button></th>`; }).join('')+'</tr></thead><tbody>';
+  order.forEach(i=>{ const r=all[i]; const cls=(i===state.car?'sel ':'')+(i===best?'best ':'')+'clickable';
+    if(!r.ok){ h+=`<tr class="${cls}" data-i="${i}"><td>${esc(CARS[i].name)}</td><td colspan="4" style="text-align:left;color:var(--bad)">Klarar inte rutten med dessa inställningar</td><td>${nf0.format(r.use)} kWh</td><td>${nf1.format(r.avg)}</td><td></td><td></td><td class="wrap"></td></tr>`; return; }
+    h+=`<tr class="${cls}" data-i="${i}"><td>${esc(CARS[i].name)}</td><td>${r.stops.length}</td><td>${nf0.format(r.charge)} min</td><td>${hmShort(r.total)}</td><td>${clock(set.dep,r.total)}</td><td>${nf0.format(r.use)} kWh</td><td>${nf1.format(r.avg)}</td><td>${nf0.format(r.kwh)} kWh</td><td>${nf0.format(r.kr)} kr</td><td class="wrap">${r.stops.map(s=>esc(s.node.c.ch[8]||s.node.c.ch[0])+' ('+nf0.format(s.tc)+')').join(' · ')||'–'}</td></tr>`; });
+  $('#cmp').innerHTML=h+'</tbody>';
+  $('#cmp').querySelectorAll('tr.clickable').forEach(tr=>tr.addEventListener('click',()=>{ state.car=+tr.dataset.i; $('#car').value=state.car; carInfo(); changed(false); }));
+  $('#cmp').querySelectorAll('.thbtn').forEach(bt=>bt.addEventListener('click',e=>{ e.stopPropagation(); const k=bt.dataset.k; if(cmpSort.key===k){ if(cmpSort.dir>0) cmpSort.dir=-1; else cmpSort={key:null,dir:1}; } else cmpSort={key:k,dir:1}; renderCmp(); const nb=$('#cmp').querySelector(`.thbtn[data-k="${k}"]`); if(nb) nb.focus(); }));
+}
+function renderNotes(){
+  const {cands}=result;
+  $('#notes').innerHTML=`
+  <p><b>Förbrukning.</b> Samma fysik som fliken Förbrukning i räckviddsmodellen: luftmotstånd med temperaturberoende luftdensitet, rullmotstånd som ökar i kyla, värmepump med fallande COP, baslast och påslag för körprofil. Hastigheten är skyltad hastighet per vägavsnitt multiplicerad med reglaget (100–125 %). Höjdskillnaden räknas för varje kilometer: uppför kostar m·g·Δh genom drivlinans verkningsgrad, nedför återvinns vald andel.</p>
+  <p><b>Laddning.</b> Bilens laddkurva i 1 %-steg, begränsad av laddarens effekt och av temperaturfaktorn (fliken Laddning). Temperaturen antas ändras linjärt från start till mål. Vid varje stopp laddas precis så mycket som behövs för att nå nästa stopp med vald reserv, eller målet med vald marginal.</p>
+  <p><b>Val av laddstopp.</b> Alla snabbladdare inom valt avstånd från vägen prövas (${cands.length} st på den här rutten). Dynamisk programmering väljer den kombination som ger kortast restid, lägst kostnad eller färst stopp. Avstickaren till laddaren räknas fram och tillbaka med 1,3 × fågelvägen i 50 km/h.</p>
+  <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.</p>
+  <p><b>Operatörer.</b> Operatörer markerade Undvik används aldrig. Ett stopp hos en operatör som inte är föredragen räknas som 5, 15 eller 45 minuter längre beroende på valet (vid Lägst kostnad 5 kr per minut), så planeraren väljer en föredragen operatör när skillnaden är mindre än så. Med Ladda bara hos föredragna används inga andra.</p>
+  <p><b>Data.</b> Vägnätet bygger på OpenStreetMap via OSRM (${META.roadkm} km huvudvägar, ${META.places} orter). Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
+  <p><b>Begränsningar.</b> Ingen hänsyn tas till trafik, köer vid laddaren, vägarbeten eller färjor. Ort väljs från en lista över ${META.places} svenska orter med minst 1 000 invånare${SITE?' och de platser du själv sparar under Mina platser':' och sparade adresser'}. Restiden bygger på vald andel av skyltad hastighet utan stopp för mat.</p>`;
+}
+
+/* ---------- Map ---------- */
+const svg=$('#map'); const NS='http://www.w3.org/2000/svg';
+let vb=null, fitPending=true;
+function pathFromRings(rings){ return rings.map(r=>'M'+r.map(p=>p[0]+','+(-p[1])).join('L')+'Z').join(''); }
+const gStatic=document.createElementNS(NS,'g'), gRoute=document.createElementNS(NS,'g'), gMarks=document.createElementNS(NS,'g');
+svg.append(gStatic,gRoute,gMarks);
+(function drawStatic(){
+  let net=''; G.e.forEach(e=>{ const P=e[2]; net+='M'+P[0]+','+(-P[1]); for(let k=2;k<P.length;k+=2) net+='L'+P[k]+','+(-P[k+1]); });
+  gStatic.innerHTML=`<path d="${pathFromRings(BASE.land)}" fill="var(--land-other)" stroke="var(--line)" stroke-width="0.6" vector-effect="non-scaling-stroke"/>
+  <path d="${pathFromRings(BASE.se)}" fill="var(--land)" stroke="var(--road)" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
+  <path d="${pathFromRings(BASE.lakes)}" fill="var(--water)" stroke="none"/>
+  <path d="${net}" fill="none" stroke="var(--road)" stroke-width="0.9" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+})();
+function setVB(x,y,w,h){ const r=svg.getBoundingClientRect(); const ar=r.width>0?r.height/r.width:0.7; if(h/w<ar){ const nh=w*ar; y-=(nh-h)/2; h=nh; } else { const nw=h/ar; x-=(nw-w)/2; w=nw; } vb={x,y,w,h}; svg.setAttribute('viewBox',`${x} ${y} ${w} ${h}`); drawMarks(); }
+function fit(){ const R=route; if(!R)return; let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity; for(let k=0;k<R.X.length;k++){x0=Math.min(x0,R.X[k]);x1=Math.max(x1,R.X[k]);y0=Math.min(y0,-R.Y[k]);y1=Math.max(y1,-R.Y[k]);} const pad=Math.max(20,(x1-x0+y1-y0)*0.08); setVB(x0-pad,y0-pad,x1-x0+2*pad,y1-y0+2*pad); }
+function pxk(){ const r=svg.getBoundingClientRect(); return vb&&r.width?vb.w/r.width:1; }
+const CITY=PL.filter(p=>!p[9]&&p[2]>=45000);
+function drawDynamic(){
+  const R=route; if(!R)return;
+  let d='M'+R.X[0]+','+(-R.Y[0]); for(let k=1;k<R.X.length;k++) d+='L'+R.X[k].toFixed(2)+','+(-R.Y[k]).toFixed(2);
+  gRoute.innerHTML=`<path d="${d}" fill="none" stroke="var(--surface)" stroke-width="7" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/><path d="${d}" fill="none" stroke="var(--sign)" stroke-width="4" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if(fitPending||!vb){ fitPending=false; fit(); } else drawMarks();
+}
+function drawMarks(){
+  if(!result){ if(!vb) return; const s=pxk(); let h=''; CITY.forEach(p=>{ h+=`<text x="${p[3]+5*s}" y="${-p[4]+4*s}" font-size="${11.5*s}" fill="var(--muted)" style="font-family:var(--font-body);paint-order:stroke" stroke="var(--land)" stroke-width="${3*s}">${esc(p[0])}</text>`; }); CH.forEach((c,i)=>{ h+=`<circle data-c="${i}" cx="${c[4]}" cy="${-c[5]}" r="${2.6*s}" fill="var(--road-hi)" opacity=".75"/>`; }); gMarks.innerHTML=h; return; }
+  const s=pxk(); const {res,cands,pts}=result; const set=result.set;
+  const near=new Set(cands.map(c=>c.ci)); const chosen=new Map(); if(res.ok) res.stops.forEach((st,i)=>chosen.set(st.node.c.ci,i+1));
+  let h='';
+  CITY.forEach(p=>{ h+=`<text x="${p[3]+5*s}" y="${-p[4]+4*s}" font-size="${11.5*s}" fill="var(--muted)" style="font-family:var(--font-body);paint-order:stroke" stroke="var(--land)" stroke-width="${3*s}">${esc(p[0])}</text>`; });
+  CH.forEach((c,i)=>{ if(chosen.has(i)||near.has(i)) return; if(c[2]<set.minkw||!opAllowed(set,c[1])) return; h+=`<circle data-c="${i}" cx="${c[4]}" cy="${-c[5]}" r="${2.6*s}" fill="var(--road-hi)" opacity=".75"/>`; });
+  near.forEach(i=>{ if(chosen.has(i))return; const c=CH[i]; h+=`<circle data-c="${i}" cx="${c[4]}" cy="${-c[5]}" r="${4.5*s}" fill="var(--charge)" fill-opacity=".45" stroke="var(--charge)" stroke-width="${1*s}"/>`; });
+  const mk=(p,fill,label)=>`<g><circle cx="${p[3]}" cy="${-p[4]}" r="${7*s}" fill="${fill}" stroke="var(--surface)" stroke-width="${2.5*s}"/>${label?`<text x="${p[3]}" y="${-p[4]+3.5*s}" text-anchor="middle" font-size="${9.5*s}" font-weight="700" fill="var(--sign-ink)">${label}</text>`:''}</g>`;
+  pts.forEach((pi,k)=>{ const p=PL[pi]; if(k===0) h+=mk(p,'var(--sign)','A'); else if(k===pts.length-1) h+=mk(p,'var(--ink)','B'); else h+=mk(p,'var(--sign-deep)',String(k)); });
+  chosen.forEach((n,i)=>{ const c=CH[i]; h+=`<g data-c="${i}"><circle cx="${c[4]}" cy="${-c[5]}" r="${10*s}" fill="var(--charge)" stroke="var(--surface)" stroke-width="${2.5*s}"/><text x="${c[4]}" y="${-c[5]+4*s}" text-anchor="middle" font-size="${11*s}" font-weight="700" fill="var(--charge-ink)">${n}</text></g>`; });
+  gMarks.innerHTML=h;
+}
+// pan & zoom
+const ptrs=new Map(); let pinch0=null, moved=false;
+function toWorld(cx,cy){ const r=svg.getBoundingClientRect(); return [vb.x+(cx-r.left)/r.width*vb.w, vb.y+(cy-r.top)/r.height*vb.h]; }
+function zoomAt(cx,cy,f){ const [wx,wy]=toWorld(cx,cy); const w=clamp(vb.w*f,8,2400), h=vb.h*(w/vb.w); const r=svg.getBoundingClientRect(); const rx=(cx-r.left)/r.width, ry=(cy-r.top)/r.height; vb={x:wx-rx*w,y:wy-ry*h,w,h}; svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`); drawMarks(); }
+svg.addEventListener('wheel',e=>{ if(!vb)return; e.preventDefault(); zoomAt(e.clientX,e.clientY,Math.exp(e.deltaY*0.0015)); },{passive:false});
+svg.addEventListener('pointerdown',e=>{ svg.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,[e.clientX,e.clientY]); moved=false; if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0={d:Math.hypot(a[0]-b[0],a[1]-b[1])}; } svg.classList.add('drag'); });
+svg.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId)||!vb)return; const p=ptrs.get(e.pointerId); const dx=e.clientX-p[0], dy=e.clientY-p[1];
+  if(ptrs.size===1){ if(Math.abs(dx)+Math.abs(dy)>2) moved=true; const s=pxk(); vb.x-=dx*s; vb.y-=dy*s; svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`); ptrs.set(e.pointerId,[e.clientX,e.clientY]); }
+  else if(ptrs.size===2){ ptrs.set(e.pointerId,[e.clientX,e.clientY]); const [a,b]=[...ptrs.values()]; const d=Math.hypot(a[0]-b[0],a[1]-b[1]); if(pinch0&&d>0){ zoomAt((a[0]+b[0])/2,(a[1]+b[1])/2,pinch0.d/d); pinch0.d=d; moved=true; } } });
+const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch0=null; if(!ptrs.size) svg.classList.remove('drag'); };
+svg.addEventListener('pointerup',e=>{ const wasMove=moved; endPtr(e); if(!wasMove) clickMap(e); });
+svg.addEventListener('pointercancel',endPtr);
+function clickMap(e){ const t=e.target.closest('[data-c]'); if(!t){ $('#pop').hidden=true; return; } const c=CH[+t.dataset.c]; const near=result?result.cands.find(x=>x.ci===+t.dataset.c):null;
+  $('#pop').innerHTML=`<button class="x" type="button" aria-label="Stäng">×</button><b>${esc(c[0])}</b>${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag${c[8]?' · '+esc(c[8]):''}<br>${near?'Km '+nf0.format(near.km)+' längs rutten, '+nf1.format(near.off)+' km från vägen':'Inte längs rutten'}<br><span class="hint">Källa: ${esc(c[9])}${c[10]?', uppdaterad '+esc(c[10]):''}</span><br><a class="small" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${c[6].toFixed(5)},${c[7].toFixed(5)}">Öppna i Google Maps</a>`;
+  $('#pop').hidden=false; $('#pop .x').addEventListener('click',()=>{$('#pop').hidden=true;}); }
+$('#zin').addEventListener('click',()=>{ const r=svg.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1/1.6); });
+$('#zout').addEventListener('click',()=>{ const r=svg.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1.6); });
+$('#zfit').addEventListener('click',fit);
+let cw=0; new ResizeObserver(()=>{ const w=$('#chart').clientWidth; if(result&&Math.abs(w-cw)>20){ cw=w; renderChart(); } }).observe($('#chart'));
+let rw=0; new ResizeObserver(()=>{ const w=svg.getBoundingClientRect().width; if(Math.abs(w-rw)>2){ rw=w; if(vb) setVB(vb.x,vb.y,vb.w,vb.h); } }).observe(svg);
+
+compute();
+window.__laddresan={consumption,chargeTable,tAt,CARS,settings,state,get result(){return result;},get route(){return route;},changed,sweref2wgs,setWX(w){WX=w;},wxPoints,absMinutes,shapeCtx,shapeRange,gmapsLinks};
+})();
+</script>
