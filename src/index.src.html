@@ -88,6 +88,7 @@ details.favs summary{padding:8px 10px;cursor:pointer;font-weight:600;color:var(-
 .favlist:empty{display:none}
 .favlist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
 .favlist li small{display:block;color:var(--muted);font-size:12px}
+.favhits{list-style:none;margin:6px 0 0;padding:0}.favhits li{padding:2px 0}.favhits .linkbtn{text-align:left;font-weight:500}
 .favlist button{border:0;background:none;color:var(--bad);cursor:pointer;font-weight:600;min-height:32px;padding:0 4px}
 /* segmented */
 .seg.seg2{grid-template-columns:repeat(2,1fr)}
@@ -204,7 +205,8 @@ tr.clickable{cursor:pointer}
         <div class="field"><label for="favname">Namn</label><input type="text" id="favname" maxlength="40" placeholder="t.ex. Hem eller Stugan"></div>
         <div class="field"><label for="favaddr">Adress</label><input type="text" id="favaddr" maxlength="120" placeholder="Gatuadress och ort"></div>
         <div class="btnrow"><button type="button" class="btn" id="favadd">Sök och spara</button></div>
-        <div class="hint" id="favstat" aria-live="polite">Platserna sparas bara i den här webbläsaren. Adressen slås upp i OpenStreetMap (Nominatim).</div>
+        <div class="hint" id="favstat" aria-live="polite">Platserna sparas bara i den här webbläsaren. Adressen slås upp i OpenStreetMap (Photon och Nominatim).</div>
+        <ul class="favhits" id="favhits"></ul>
       </div></details>
       <div class="field" style="margin-top:10px"><span class="lbl" id="rmlbl">Vägval</span>
         <div class="seg" role="radiogroup" aria-labelledby="rmlbl">
@@ -968,21 +970,47 @@ if(SITE){
     FAVS.splice(i,1); if(!saveFavs()) return;
     const fix=v=>v===r?-1:(v>r?v-1:v); state.from=fix(state.from); state.to=fix(state.to); state.vias=state.vias.map(fix).filter(v=>v>=0);
     save(); location.reload(); });
+  // Adressökning: Photon (tolerant mot ortnamn, t.ex. postort i stället för by) och Nominatim, fritext och
+  // med postnummer i ett eget fält. Träffar inom 60 m från varandra räknas som samma plats.
+  const geocode=async addr=>{
+    const hits=[], add=(lat,lon,label,sub)=>{ lat=+lat; lon=+lon; if(!isFinite(lat)||!isFinite(lon)) return;
+      if(hits.some(h=>Math.abs(h.lat-lat)<0.0006&&Math.abs(h.lon-lon)<0.001)) return; hits.push({lat,lon,label,sub}); };
+    const get=async u=>{ try{ const r=await fetch(u); return r.ok?await r.json():null; }catch(e){ return null; } };
+    const ph=await get('https://photon.komoot.io/api/?limit=5&bbox=10.5,55.0,24.5,69.5&q='+encodeURIComponent(addr));
+    ((ph&&ph.features)||[]).filter(f=>(f.properties.countrycode||'').toUpperCase()==='SE').forEach(f=>{ const p=f.properties, c=f.geometry.coordinates;
+      const street=[p.street||p.name,p.housenumber].filter(Boolean).join(' '), place=[p.postcode,p.city||p.locality||p.district].filter(Boolean).join(' ');
+      add(c[1],c[0],[street,place].filter(Boolean).join(', ')||p.name||addr,p.city||p.locality||''); });
+    const nomi=j=>(j||[]).forEach(h=>{ const ad=h.address||{}; add(h.lat,h.lon,h.display_name.split(',').slice(0,3).join(','),ad.city||ad.town||ad.village||ad.municipality||''); });
+    nomi(await get('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=3&countrycodes=se&accept-language=sv&q='+encodeURIComponent(addr)));
+    const pc=/\b(\d{3})\s?(\d{2})\b/.exec(addr);
+    if(pc){ const street=addr.slice(0,pc.index).replace(/[,\s]+$/,'').trim();
+      const m=/^(.*?)\s+(\d+\s?[a-zA-Z]?)$/.exec(street), st=m?m[2]+' '+m[1]:street;
+      if(st) nomi(await get('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=3&countrycodes=se&accept-language=sv&street='+encodeURIComponent(st)+'&postalcode='+pc[1]+pc[2])); }
+    return hits.slice(0,4);
+  };
+  const saveFav=(name,addr,h)=>{
+    const f={name,addr,lat:+h.lat.toFixed(5),lon:+h.lon.toFixed(5),sub:h.sub||''};
+    const [x,y]=wgs2sweref(f.lat,f.lon); if(snapGraph(x,y).d>30){ favStat('Adressen ligger mer än 30 km från planerarens vägnät och kan inte användas.',true); return; }
+    FAVS.push(f); if(!saveFavs()){ FAVS.pop(); return; }
+    pushFav(f,FAVS.length-1); PN.push(norm(f.name)); renderFavs();
+    $('#favname').value=''; $('#favaddr').value=''; $('#favhits').innerHTML='';
+    favStat(`${f.name} är sparad (${h.label}). Välj den under Sparade platser i Från eller Till.`);
+  };
+  let lastHits=[];
+  $('#favhits').addEventListener('click',e=>{ const b=e.target.closest('button[data-h]'); if(!b) return;
+    const name=$('#favname').value.trim(); if(!name){ favStat('Fyll i ett namn först.',true); return; }
+    saveFav(name,$('#favaddr').value.trim(),lastHits[+b.dataset.h]); });
   $('#favadd').addEventListener('click',async()=>{
     const name=$('#favname').value.trim(), addr=$('#favaddr').value.trim();
     if(!name||!addr){ favStat('Fyll i både namn och adress.',true); return; }
     if(FAVS.some(f=>f.name.toLowerCase()===name.toLowerCase())){ favStat('Det finns redan en plats som heter så. Välj ett annat namn.',true); return; }
-    const btn=$('#favadd'); btn.disabled=true; favStat('Söker adressen …');
+    const btn=$('#favadd'); btn.disabled=true; favStat('Söker adressen …'); $('#favhits').innerHTML='';
     try{
-      const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=se&accept-language=sv&q='+encodeURIComponent(addr));
-      const j=r.ok?await r.json():null; const h=j&&j[0];
-      if(!h){ favStat('Hittade inte adressen. Prova med gatuadress och ort, t.ex. "Storgatan 1, Ljungby".',true); return; }
-      const ad=h.address||{}, f={name,addr,lat:+(+h.lat).toFixed(5),lon:+(+h.lon).toFixed(5),sub:ad.city||ad.town||ad.village||ad.municipality||''};
-      const [x,y]=wgs2sweref(f.lat,f.lon); if(snapGraph(x,y).d>30){ favStat('Adressen ligger mer än 30 km från planerarens vägnät och kan inte användas.',true); return; }
-      FAVS.push(f); if(!saveFavs()){ FAVS.pop(); return; }
-      pushFav(f,FAVS.length-1); PN.push(norm(f.name)); renderFavs();
-      $('#favname').value=''; $('#favaddr').value='';
-      favStat(`${f.name} är sparad (${h.display_name.split(',').slice(0,3).join(',')}). Välj den under Sparade platser i Från eller Till.`);
+      const hits=await geocode(addr); lastHits=hits;
+      if(!hits.length){ favStat('Hittade inte adressen. Prova med gatuadress och ort, t.ex. "Storgatan 1, Ljungby", eller lägg till postnumret.',true); return; }
+      if(hits.length===1){ saveFav(name,addr,hits[0]); return; }
+      favStat('Flera platser passar. Välj rätt:');
+      $('#favhits').innerHTML=hits.map((h,i)=>`<li><button type="button" class="linkbtn" data-h="${i}">${esc(h.label)}</button></li>`).join('');
     }catch(e){ favStat('Kunde inte nå adressökningen. Kontrollera nätverket och försök igen.',true); }
     finally{ btn.disabled=false; }
   });

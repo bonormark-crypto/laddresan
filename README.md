@@ -48,7 +48,7 @@ python scripts/assemble.py          # skapar dist/index.html
 - Vägnät: © OpenStreetMap-bidragsgivare (ODbL), via OSRM
 - Laddplatser: [Open Charge Map](https://openchargemap.org) (CC BY 4.0) och [supercharge.info](https://supercharge.info)
 - Väder: [Open-Meteo](https://open-meteo.com) (CC BY 4.0)
-- Adressökning: [Nominatim](https://nominatim.org), © OpenStreetMap-bidragsgivare
+- Adressökning: [Photon](https://photon.komoot.io) och [Nominatim](https://nominatim.org), © OpenStreetMap-bidragsgivare
 - Höjd: AWS Terrain Tiles (bland annat EU-DEM, SRTM)
 - Orter: GeoNames (CC BY 4.0). Baskarta: Natural Earth (public domain)
 
