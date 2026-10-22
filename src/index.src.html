@@ -340,6 +340,7 @@ tr.clickable{cursor:pointer}
 <script type="application/json" id="d-chargers">__CHARGERS__</script>
 <script type="application/json" id="d-base">__BASE__</script>
 <script type="application/json" id="d-meta">__META__</script>
+<script type="application/json" id="d-cars">__CARS_EXTRA__</script>
 <script>
 (function(){
 "use strict";
@@ -379,6 +380,10 @@ const CARS=[
  {name:'BMW iX3 50 xDrive 2026',b:108.7,dc:400,kg:2210,cda:0.629,wltp:805,eta:0.93,crr:0.0095,prof:5,pre:true},
  {name:'VW ID.4 GTX 2023',b:77,dc:175,kg:2200,cda:0.73,wltp:509,eta:0.86,crr:0.0107,prof:4,pre:false}
 ];
+/* Fler bilar: normaliserad förbrukning (Rackvidd_normaliserad: 90 och 120 km/h vid 20 °C, torr väg, sommardäck,
+   standardfälg) kalibrerad till fysikmodellen (cda och effektivt rullmotstånd, η 0,88), och uppmätt laddkurva i kW per % */
+const NBASE=CARS.length;
+J('d-cars').forEach(c=>CARS.push(Object.assign({extra:true,wltp:null},c)));
 const CURVE_SOC=[0,5,10,20,30,40,50,60,70,80,90,100];
 const CURVES={ /* C-rate per SOC point, Laddning!B34:G45 */
  1:[3.1,3.75,4,4,3.75,3.25,2.75,2.25,1.8,1.4,0.85,0.35],
@@ -421,6 +426,7 @@ function chargeTempFactor(car,set,T){
   return interp(TF_T,TF_V,clamp(T,-20,40));
 }
 function carPower(car){ // kW per 1 % SOC step without charger limit
+  if(car.kw) return Float64Array.from(car.kw); // uppmätt laddkurva
   const c=CURVES[car.prof], p=new Float64Array(101);
   for(let s=0;s<=100;s++) p[s]=Math.min(interp(CURVE_SOC,c,s)*car.b,car.dc);
   return p;
@@ -1031,9 +1037,14 @@ function nearestBetween(){ if(state.from<0||state.to<0){ let bi=0; PL.forEach((p
 $('#swap').addEventListener('click',()=>{ [state.from,state.to]=[state.to,state.from]; state.vias.reverse(); cFrom.refresh(); cTo.refresh(); renderVias(); changed(true); });
 
 /* car select and prices */
-CARS.forEach((c,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=c.name; $('#car').appendChild(o); });
+{ const grp=(label,from,to)=>{ const g=document.createElement('optgroup'); g.label=label; for(let i=from;i<to;i++){ const o=document.createElement('option'); o.value=i; o.textContent=CARS[i].name; g.appendChild(o); } $('#car').appendChild(g); };
+  grp('Grundurval (räckviddsmodellen)',0,NBASE); if(CARS.length>NBASE) grp(`Fler bilar: uppmätt förbrukning och laddkurva (${CARS.length-NBASE})`,NBASE,CARS.length); }
+if(!(state.car>=0&&state.car<CARS.length)) state.car=2;
 $('#car').value=state.car;
-function carInfo(){ const c=CARS[state.car]; $('#carinfo').textContent=`${nf1.format(c.b)} kWh netto · max ${c.dc} kW DC · WLTP ${c.wltp} km`+(c.pre?'':' · saknar förkonditionering'); }
+function carInfo(){ const c=CARS[state.car];
+  if(!c.extra){ $('#carinfo').textContent=`${nf1.format(c.b)} kWh netto · max ${c.dc} kW DC · WLTP ${c.wltp} km`+(c.pre?'':' · saknar förkonditionering'); return; }
+  const w=[c.w90?`${c.w90} Wh/km i 90`:'',c.w120?`${c.w120} Wh/km i 120 km/h`:''].filter(Boolean).join(', ');
+  $('#carinfo').textContent=`${nf1.format(c.b)} kWh använd kapacitet · max ${c.dc} kW DC (uppmätt) · ${w} vid 20 °C (normaliserat, ${c.n} ${c.n>1?'tester':'test'}) · laddkurva: ${c.curve}${c.cnote?' ('+c.cnote+')':''}`+(c.pre?'':' · antas sakna förkonditionering'); }
 $('#car').addEventListener('change',()=>{ state.car=+$('#car').value; carInfo(); changed(false); });
 document.querySelectorAll('input[name=rmode]').forEach(r=>{ if(r.value===(state.rmode||'fast')) r.checked=true; r.addEventListener('change',()=>{ state.rmode=r.value; changed(true); }); });
 document.querySelectorAll('input[name=opt]').forEach(r=>{ if(r.value===state.opt) r.checked=true; r.addEventListener('change',()=>{ state.opt=r.value; changed(false); }); });
@@ -1094,7 +1105,7 @@ function compute(){
   const car=CARS[state.car];
   const run=c=>{ const r1=plan(c,route,cands,set,null); if(!set.wx||!r1.ok||!r1.stops.length) return r1; return plan(c,route,cands,set,r1.stops.map(s=>[s.node.km,s.tstop])); };
   const res=run(car);
-  const all=CARS.map((c,i)=>i===state.car?res:run(c));
+  const all=[]; for(let i=0;i<NBASE;i++) all[i]=i===state.car?res:run(CARS[i]); all[state.car]=res; // jämförelsen: grundurvalet + vald bil
   result={set,car,res,all,cands,pts};
   render();
 }
@@ -1308,7 +1319,7 @@ const CMPCOL=[['name','Bil'],['stops','Laddstopp'],['charge','Laddtid'],['total'
 function renderCmp(){
   const {all,set}=result; let best=-1,bt=Infinity; all.forEach((r,i)=>{ if(r.ok&&r.total<bt){bt=r.total;best=i;} });
   const val=(r,i,k)=>k==='name'?CARS[i].name:k==='use'||k==='avg'?r[k]:(!r.ok?null:k==='stops'?r.stops.length:k==='arrive'?r.total:r[k]);
-  const order=all.map((r,i)=>i);
+  const order=all.map((r,i)=>i).filter(i=>all[i]);
   if(cmpSort.key){ const k=cmpSort.key, d=cmpSort.dir; order.sort((a,b)=>{ const va=val(all[a],a,k), vb=val(all[b],b,k); if(va==null&&vb==null) return a-b; if(va==null) return 1; if(vb==null) return -1; if(typeof va==='string') return d*va.localeCompare(vb,'sv'); return d*(va-vb)||a-b; }); }
   let h='<thead><tr>'+CMPCOL.map(([k,l])=>{ if(!k) return `<th style="text-align:left">${l}</th>`; const on=cmpSort.key===k; const ar=on?(cmpSort.dir>0?'ascending':'descending'):'none';
     return `<th aria-sort="${ar}"><button type="button" class="thbtn" data-k="${k}">${l}<span class="arr" aria-hidden="true">${on?(cmpSort.dir>0?'▲':'▼'):'↕'}</span></button></th>`; }).join('')+'</tr></thead><tbody>';
@@ -1322,10 +1333,10 @@ function renderCmp(){
 function renderNotes(){
   const {cands}=result;
   $('#notes').innerHTML=`
-  <p><b>Förbrukning.</b> Samma fysik som fliken Förbrukning i räckviddsmodellen: luftmotstånd med temperaturberoende luftdensitet, rullmotstånd som ökar i kyla, värmepump med fallande COP, baslast och påslag för körprofil. Hastigheten är skyltad hastighet per vägavsnitt multiplicerad med reglaget (100–125 %). Höjdskillnaden räknas för varje kilometer: uppför kostar m·g·Δh genom drivlinans verkningsgrad, nedför återvinns vald andel.</p>
-  <p><b>Laddning.</b> Bilens laddkurva i 1 %-steg, begränsad av laddarens effekt och av temperaturfaktorn (fliken Laddning). Temperaturen antas ändras linjärt från start till mål. Vid varje stopp laddas precis så mycket som behövs för att nå nästa stopp med vald reserv, eller målet med vald marginal.</p>
+  <p><b>Förbrukning.</b> Samma fysik som fliken Förbrukning i räckviddsmodellen: luftmotstånd med temperaturberoende luftdensitet, rullmotstånd som ökar i kyla, värmepump med fallande COP, baslast och påslag för körprofil. Hastigheten är skyltad hastighet per vägavsnitt multiplicerad med reglaget (100–125 %). Höjdskillnaden räknas för varje kilometer: uppför kostar m·g·Δh genom drivlinans verkningsgrad, nedför återvinns vald andel.${CARS[state.car].extra?` För ${esc(CARS[state.car].name)} är luftmotstånd och rullmotstånd anpassade så att modellen ger bilens normaliserade förbrukning vid 90 och 120 km/h (uppmätt vid räckviddstester, omräknat till 20 °C, torr väg, genomsnittligt sommardäck och standardfälg). Kyla, vinterdäck, vind, last och höjd räknas sedan med samma fysik som för övriga bilar.`:''}</p>
+  <p><b>Laddning.</b> Bilens laddkurva i 1 %-steg${CARS[state.car].extra?' (uppmätt kurva i kW per procent; efter sista mätpunkten antas effekten avta linjärt)':''}, begränsad av laddarens effekt och av temperaturfaktorn (fliken Laddning). Temperaturen antas ändras linjärt från start till mål. Vid varje stopp laddas precis så mycket som behövs för att nå nästa stopp med vald reserv, eller målet med vald marginal.</p>
   <p><b>Val av laddstopp.</b> Alla snabbladdare inom valt avstånd från vägen prövas (${cands.length} st på den här rutten). Dynamisk programmering väljer den kombination som ger kortast restid, lägst kostnad eller färst stopp. Avstickaren till laddaren räknas fram och tillbaka med 1,3 × fågelvägen i 50 km/h.</p>
-  <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.</p>
+  <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). ${SITE?'Prognosen kommer från Open-Meteo, timvärden för avresedagen och två dygn framåt.':'Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.'}</p>
   <p><b>Operatörer.</b> Operatörer markerade Undvik används aldrig. Ett stopp hos en operatör som inte är föredragen räknas som 5, 15 eller 45 minuter längre beroende på valet (vid Lägst kostnad 5 kr per minut), så planeraren väljer en föredragen operatör när skillnaden är mindre än så. Med Ladda bara hos föredragna används inga andra.</p>
   <p><b>Data.</b> ${SITE?'Rutten hämtas från ruttmotorn OSRM med OpenStreetMaps fullständiga vägnät (© OpenStreetMap-bidragsgivare). Laddresans eget vägnät, '+META.roadkm+' km huvudvägar, används för att välja vägtyp i lägena Kortaste och Lägst förbrukning och som reserv om ruttmotorn inte svarar.':'Vägnätet bygger på OpenStreetMap via OSRM ('+META.roadkm+' km huvudvägar).'} Ortlistan har ${META.places} orter. Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
   <p><b>Begränsningar.</b> Ingen hänsyn tas till trafik, köer vid laddaren, vägarbeten eller färjor. Ort väljs från en lista över ${META.places} svenska orter med minst 1 000 invånare${SITE?' och de platser du själv sparar under Mina platser':' och sparade adresser'}. Restiden bygger på vald andel av skyltad hastighet utan stopp för mat.</p>`;

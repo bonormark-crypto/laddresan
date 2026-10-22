@@ -7,7 +7,7 @@ Ruttplanerare för elbil i Sverige. Laddresan föreslår laddstopp vid snabbladd
 ## Vad den gör
 
 - Väljer rutt mellan start, mål och mellanstationer på tre sätt: snabbaste, kortaste (på större vägar) eller lägst förbrukning (högst 10 % längre körtid än snabbaste).
-- Räknar förbrukning och laddning för 8 bilmodeller med deras batterier, luftmotstånd och laddkurvor.
+- Räknar förbrukning och laddning för 8 bilmodeller i grundurvalet och drygt 200 fler bilar. För de senare kommer förbrukningen från normaliserade räckviddstester vid 90 och 120 km/h och laddningen från uppmätta laddkurvor.
 - Väljer laddstopp efter kortast restid, lägst kostnad eller färst stopp. Den laddar bara så mycket som behövs till nästa stopp.
 - Tar hänsyn till föredragna och undvikna laddoperatörer och deras priser.
 - Hämtar väderprognos längs rutten (temperatur och vind) från Open-Meteo.
@@ -24,6 +24,8 @@ Ruttplanerare för elbil i Sverige. Laddresan föreslår laddstopp vid snabbladd
 | `data/graph_stage1b.json` | Vägnätet: ca 26 500 km huvudvägar från OpenStreetMap via OSRM |
 | `data/elev_b.json` | Höjd för vägnätets punkter (AWS Terrain Tiles) |
 | `data/chargers.json`, `data/tesla_se.json` | Snabbladdare från 150 kW |
+| `data/cars_extra.json` | Fler bilar: kapacitet, vikt, kalibrerat luft- och rullmotstånd, uppmätt laddkurva |
+| `scripts/build_cars.py`, `scripts/car_mapping.py` | Bygger `cars_extra.json` från arbetsböckerna Rackvidd_normaliserad.xlsx och Charging_curves.xlsx (kräver `pip install openpyxl`) |
 | `data/se_cities.json` | Ca 800 svenska orter (GeoNames) |
 | `data/basemap.json` | Baskarta (Natural Earth) |
 | `.github/workflows/deploy.yml` | Bygger och publicerar på GitHub Pages |
