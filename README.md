@@ -25,6 +25,7 @@ Ruttplanerare för elbil i Sverige. Laddresan föreslår laddstopp vid snabbladd
 | `data/elev_b.json` | Höjd för vägnätets punkter (AWS Terrain Tiles) |
 | `data/chargers.json`, `data/tesla_se.json` | Snabbladdare från 150 kW |
 | `data/cars_extra.json` | Fler bilar: kapacitet, vikt, kalibrerat luft- och rullmotstånd, uppmätt laddkurva |
+| `data/cars_own.json`, `scripts/calibrate_own.py` | Två bilar kalibrerade mot verklig körning (TeslaMate) |
 | `scripts/build_cars.py`, `scripts/car_mapping.py` | Bygger `cars_extra.json` från arbetsböckerna Rackvidd_normaliserad.xlsx och Charging_curves.xlsx (kräver `pip install openpyxl`) |
 | `data/se_cities.json` | Ca 800 svenska orter (GeoNames) |
 | `data/basemap.json` | Baskarta (Natural Earth) |

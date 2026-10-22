@@ -91,6 +91,7 @@ out = (src.replace('__GRAPH__', json.dumps(graph, separators=sep))
           .replace('__BASE__', open(f'{S}/data/basemap.json').read())
           .replace('__META__', json.dumps(meta, ensure_ascii=False))
           .replace('__CARS_EXTRA__', open(f'{S}/data/cars_extra.json').read())
+          .replace('__CARS_OWN__', open(f'{S}/data/cars_own.json').read())
           .replace('__TARGET__', args.target))
 if args.target == 'site':  # claude.ai lägger själv till dokumentramen; webbplatsen behöver en egen
     icon = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'%3E%3Crect width='34' height='34' rx='7' "
