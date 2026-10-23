@@ -4,7 +4,7 @@ on:
   workflow_dispatch:   # körs för hand: Actions → Kontrollera NOBIL-data → Run workflow
 
 permissions:
-  contents: read
+  contents: write   # sparar sammanställningen på grenen nobil-rapport
 
 jobs:
   check:
@@ -23,6 +23,18 @@ jobs:
 
       - name: Visa rapporten
         run: cat rapport.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Spara sammanställningen på grenen nobil-rapport
+        run: |
+          cp rapport.md /tmp/rapport.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan nobil-rapport
+          git rm -rfq .
+          cp /tmp/rapport.md rapport.md
+          git add rapport.md
+          git commit -qm "NOBIL-rapport $(date -u +%F)"
+          git push -fq origin nobil-rapport
 
       - uses: actions/upload-artifact@v4
         with:
