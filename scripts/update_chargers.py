@@ -3,8 +3,9 @@
     python scripts/update_chargers.py --ocm-dir ocm-export/data/SE
 
 Källor:
-- Open Charge Map, deras öppna export på GitHub (github.com/openchargemap/ocm-export), en JSON-fil per plats
+- NOBIL, Sveriges officiella register enligt AFIR (Energimyndigheten), huvudkälla. Kräver NOBIL_API_KEY.
 - supercharge.info (Teslas Superchargers som är öppna för andra bilar)
+- Open Charge Map, deras öppna export på GitHub (github.com/openchargemap/ocm-export), reserv om NOBIL saknas
 
 Skriver data/chargers.json och data/chargers_meta.json. Om en källa inte går att nå behålls den
 senast hämtade datan, så att bygget aldrig går sönder av ett tillfälligt fel.
@@ -101,39 +102,63 @@ for name, status, lat, lon, stalls, kw, other, dt in tesla:
     ded.append(dict(name='Tesla Supercharger ' + nm, town=nm.split(',')[0].split(' - ')[0], lat=lat, lon=lon, kw=kw,
                     n=stalls, op='Tesla', src='supercharge.info', upd=dt))
 
-# --- NOBIL: laddarens spänning och ström (AFIR-data via Energimyndigheten, CC BY 3.0) ---
-# NOBIL anger spänning och ström för nästan alla uttag, men oftast framräknade ur effekten med en fast
+# --- NOBIL: Sveriges officiella register över laddplatser (AFIR-data via Energimyndigheten, CC BY 3.0) ---
+# NOBIL är huvudkällan för alla laddplatser utom Teslas, som tas från supercharge.info eftersom den anger
+# vilka platser som är öppna för andra bilar. Går NOBIL inte att nå används senast hämtade data, och
+# finns ingen sådan används Open Charge Map.
+# Spänning och ström: NOBIL anger dem för nästan alla uttag, men oftast framräknade ur effekten med en fast
 # spänning (t.ex. 1000 V/150 A för 150 kW). Bara när spänning × ström är minst 10 % större än effekten
-# räknas värdena som laddarens verkliga gränser. Sammanställningen sparas i data/nobil_se.json så att
-# den kan användas även om NOBIL inte går att nå. API:t anropas bara här, aldrig från webbläsaren.
+# räknas värdena som laddarens verkliga gränser. API:t anropas bara här, aldrig från webbläsaren.
 NOBIL = f'{S}/data/nobil_se.json'
+TRUCK = ('heavy duty', 'milence', 'scania', 'einride', 'aurubis')   # nät för lastbilar
+OPMAP = [('tesla', 'Tesla'), ('ionity', 'Ionity'), ('circle k', 'Circle K'), ('ingo', 'Circle K'), ('recharge', 'Recharge'),
+         ('okq8', 'OKQ8'), ('e.on', 'E.ON'), ('eon drive', 'E.ON'), ('incharge', 'InCharge'), ('vattenfall', 'InCharge'),
+         ('mer sweden', 'Mer'), ('allego', 'Allego'), ('eways', 'Eways'), ('st1', 'St1'), ('jolt', 'Jolt'),
+         ('chargenode', 'ChargeNode'), ('eviny', 'Eviny'), ('hedin', 'Hedin'), ('preem', 'Preem'), ('kwatt', 'kWatt'),
+         ('spirii', 'Spirii'), ('cheap charge', 'Cheap Charge'), ('edri', 'EDRI'), ('nima', 'Nima'), ('ebb charge', 'EBB Charge'),
+         ('reload', 'Reload'), ('virta', 'Virta')]
+def op_nobil(oper, owner):
+    t = f' {oper} {owner} '.lower()
+    if oper.strip().lower() == 'mer' or ' mer ' in t: return 'Mer'
+    for k, v in OPMAP:
+        if k in t: return v
+    o = (oper or owner).replace('(Chargers)', '').replace('&amp;', '&').strip()
+    for x in (' AB', ' Sverige', ' Sweden', ' Nordic', ' ApS'):
+        o = o.replace(x, '')
+    return o.strip() or 'Övriga'
 def nobil_fetch(key):
-    import re, urllib.parse
+    import re, urllib.parse, html
     q = urllib.parse.urlencode(dict(apikey=key, countrycode='SWE', format='json', file='false'))
     d = json.loads(urllib.request.urlopen(f'https://nobil.no/api/server/datadump.php?{q}', timeout=180).read().decode('utf-8', 'replace'))
-    def num(a):
-        if not a: return None
+    def val(a):
+        if not a: return ''
         t, v = (a.get('trans') or '').strip(), str(a.get('attrval') or '').strip()
-        v = v if v and (not t or t == (a.get('attrname') or '').strip()) else (t or v)
-        m = re.search(r'\d+(?:[.,]\d+)?', v)
+        return v if v and (not t or t == (a.get('attrname') or '').strip()) else (t or v)
+    def num(a):
+        m = re.search(r'\d+(?:[.,]\d+)?', val(a))
         return float(m.group(0).replace(',', '.')) if m else None
     out = []
     for s in d.get('chargerstations') or []:
-        md = s.get('csmd') or {}
+        md = s.get('csmd') or {}; at = s.get('attr') or {}
         pos = re.findall(r'-?\d+\.\d+', md.get('Position') or '')
-        if len(pos) < 2: continue
-        best = None
-        for c in ((s.get('attr') or {}).get('conn') or {}).values():
-            t = (c.get('5') or {}).get('trans') or ''
-            m = re.search(r'(\d+)\s*kW', t)
-            if 'DC' not in t.upper() or not m: continue
+        if len(pos) < 2 or str(md.get('Station_status', 1)) != '1': continue
+        if val((at.get('st') or {}).get('2')) not in ('Public', ''): continue
+        best, n = None, 0
+        for c in (at.get('conn') or {}).values():
+            m = re.search(r'(\d+)\s*kW', (c.get('5') or {}).get('trans') or '')
+            if 'DC' not in ((c.get('5') or {}).get('trans') or '').upper() or not m: continue
+            if 'truck' in val(c.get('17')).lower() and 'car' not in val(c.get('17')).lower(): continue
             kw, V, A = int(m.group(1)), num(c.get('12')), num(c.get('31'))
+            if kw >= 150: n += 1
             real = bool(V and A and V * A / 1000 >= 1.1 * kw and V <= 1500 and A <= 1500)
             k = (kw, real, V or 0, A or 0)
             if best is None or k > best: best = k
-        if best and best[0] >= 150:
-            out.append(dict(lat=round(float(pos[0]), 5), lon=round(float(pos[1]), 5), kw=best[0], owner=(md.get('Owned_by') or '').strip(),
-                            v=int(best[2]) if best[1] else 0, a=int(best[3]) if best[1] else 0))
+        if not best or best[0] < 150: continue
+        oper, owner = html.unescape((md.get('Operator') or '').strip()), html.unescape((md.get('Owned_by') or '').strip())
+        out.append(dict(name=html.unescape((md.get('name') or '').strip()), town=(md.get('City') or '').strip().title(),
+                        lat=round(float(pos[0]), 5), lon=round(float(pos[1]), 5), kw=best[0], n=n,
+                        op=op_nobil(oper, owner), oper=oper, owner=owner, upd=(md.get('Updated') or md.get('Created') or '')[:10],
+                        id=md.get('id'), v=int(best[2]) if best[1] else 0, a=int(best[3]) if best[1] else 0))
     return out
 nob = json.load(open(NOBIL)) if os.path.exists(NOBIL) else []
 if os.environ.get('NOBIL_API_KEY'):
@@ -146,19 +171,42 @@ if os.environ.get('NOBIL_API_KEY'):
             print(f'NOBIL: bara {len(n2)} platser, behåller tidigare data', file=sys.stderr)
     except Exception as e:
         print('NOBIL gick inte att nå, behåller tidigare data:', type(e).__name__, file=sys.stderr)
-matched = 0
-for c in ded:
-    c.pop('vmax', None); c.pop('amax', None)
-    near = [(km(c['lat'], c['lon'], n['lat'], n['lon']), n) for n in nob if abs(n['lat'] - c['lat']) < 0.005]
-    near = [x for x in near if x[0] < 0.15 and ('tesla' in x[1]['owner'].lower()) == (c['op'] == 'Tesla')]  # Tesla och andra kan stå granne
-    if not near: continue
-    matched += 1
-    n = min(near, key=lambda x: x[0])[1]
-    if n['v'] and n['a']:
-        c['vmax'], c['amax'] = n['v'], n['a']
-print(f'NOBIL: {len(nob)} platser, {matched} matchade, {sum("vmax" in c for c in ded)} med verklig spänning och ström')
+
+tes = [c for c in ded if c['op'] == 'Tesla']
+ocm_sites = [c for c in ded if c['op'] != 'Tesla']
+is_tesla = lambda n: 'tesla' in (n.get('owner', '') + ' ' + n.get('oper', '')).lower()
+if len(nob) >= 500 and 'name' in nob[0]:
+    others = []
+    for n in sorted(nob, key=lambda n: (-n['kw'], -n['n'])):
+        if is_tesla(n) or any(k in (n['owner'] + ' ' + n['oper']).lower() for k in TRUCK): continue
+        # samma operatör inom 60 m räknas som en plats
+        dup = next((d for d in others if d['op'] == n['op'] and km(n['lat'], n['lon'], d['lat'], d['lon']) < 0.06), None)
+        if dup: dup['n'] += n['n']; continue
+        c = dict(name=n['name'], town=n['town'], lat=n['lat'], lon=n['lon'], kw=n['kw'], n=n['n'], op=n['op'], src='NOBIL', upd=n['upd'])
+        if n['v'] and n['a']: c['vmax'], c['amax'] = n['v'], n['a']
+        others.append(c)
+    miss = [c for c in ocm_sites if not any(km(c['lat'], c['lon'], d['lat'], d['lon']) < 0.3 for d in others)]
+    print(f'NOBIL: {len(others)} platser utom Tesla. Open Charge Map har {len(miss)} platser som saknas i NOBIL (används inte):',
+          '; '.join(f"{c['name']} ({c['op']}, {c['kw']} kW)" for c in miss[:40]))
+else:
+    others = ocm_sites
+    print('NOBIL saknas, använder Open Charge Map', file=sys.stderr)
+    for c in others:
+        near = [(km(c['lat'], c['lon'], n['lat'], n['lon']), n) for n in nob if abs(n['lat'] - c['lat']) < 0.005 and not is_tesla(n)]
+        near = [x for x in near if x[0] < 0.15]
+        if near:
+            n = min(near, key=lambda x: x[0])[1]
+            if n['v'] and n['a']: c['vmax'], c['amax'] = n['v'], n['a']
+for c in tes:   # Teslas spänning och ström från NOBIL
+    near = [(km(c['lat'], c['lon'], n['lat'], n['lon']), n) for n in nob if abs(n['lat'] - c['lat']) < 0.005 and is_tesla(n)]
+    near = [x for x in near if x[0] < 0.3]
+    if near:
+        n = min(near, key=lambda x: x[0])[1]
+        if n['v'] and n['a']: c['vmax'], c['amax'] = n['v'], n['a']
+ded = others + tes
 
 json.dump(ded, open(f'{S}/data/chargers.json', 'w'), ensure_ascii=False)
 json.dump(meta, open(meta_path, 'w'), ensure_ascii=False)
-print(f'{len(ded)} laddplatser (OCM {sum(c["src"] == "OCM" for c in ded)}, Tesla {sum(c["op"] == "Tesla" for c in ded)})')
-print(collections.Counter(c['op'] for c in ded).most_common())
+print(f'{len(ded)} laddplatser (NOBIL {sum(c["src"] == "NOBIL" for c in ded)}, OCM {sum(c["src"] == "OCM" for c in ded)}, '
+      f'Tesla {len(tes)}), {sum("vmax" in c for c in ded)} med verklig spänning och ström')
+print(collections.Counter(c['op'] for c in ded).most_common(40))

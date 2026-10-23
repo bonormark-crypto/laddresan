@@ -6,7 +6,7 @@
 Data läses från data/: vägnät (graph_stage1b.json), höjd (elev_b.json), laddare (chargers.json,
 chargers_meta.json), orter (se_cities.json) och baskarta (basemap.json).
 """
-import argparse, json, os, datetime
+import argparse, json, math, os, datetime
 import numpy as np
 from scipy.spatial import cKDTree
 from pyproj import Transformer
@@ -59,11 +59,14 @@ C = []
 for c in json.load(open(f'{S}/data/chargers.json')):
     x, y = [v / 1000 for v in T.transform(c['lon'], c['lat'])]
     C.append([c['name'], c['op'], c['kw'], c['n'], round(x, 2), round(y, 2), c['lat'], c['lon'], c['town'],
-              c['src'] == 'OCM' and 'Open Charge Map' or 'supercharge.info', c['upd'], c.get('vmax', 0), c.get('amax', 0)])
+              {'OCM': 'Open Charge Map', 'NOBIL': 'NOBIL'}.get(c['src'], c['src']), c['upd'], c.get('vmax', 0), c.get('amax', 0)])
 # laddplatser som saknas i de öppna källorna
 EXTRA = [('Klevshult E4 (Plugit, tidigare GreenStop/ChargeNode)', 'Övriga', 400, 8, 57.3552, 14.1014, 'Klevshult', 'pressmeddelanden ChargeNode/Plugit', '2026-03'),
          ('ChargeNode Rasta Ödeshög, Lievägen 2', 'ChargeNode', 400, 24, 58.23317, 14.67172, 'Ödeshög', 'uppgift från användare', '2026-10')]
+def near_km(la, lo, c):
+    return math.hypot((c[6] - la) * 111.2, (c[7] - lo) * 111.2 * math.cos(math.radians(la)))
 for name, op, kw, n, la, lo, town, srcn, upd in EXTRA:
+    if any(near_km(la, lo, c) < 0.3 for c in C): continue   # finns nu i de öppna källorna
     x, y = [v / 1000 for v in T.transform(lo, la)]
     C.append([name, op, kw, n, round(x, 2), round(y, 2), la, lo, town, srcn, upd, 0, 0])
 
