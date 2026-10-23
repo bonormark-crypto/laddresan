@@ -157,6 +157,7 @@ details.more .inner{padding:0 16px 14px}
 .tl .meta{font-size:13px;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .chip{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface-2);white-space:nowrap}
+.chip.lim{border-color:color-mix(in srgb,var(--warn,#b45309) 55%,var(--line))}
 .chip.soc{border-color:transparent;background:color-mix(in srgb,var(--charge) 22%,var(--surface))}
 .leg{font-size:12.5px;color:var(--muted);padding:0 0 10px}
 .btnrow{display:flex;flex-wrap:wrap;gap:8px}
@@ -274,6 +275,11 @@ tr.clickable{cursor:pointer}
         <div class="field"><label for="corr">Max avstånd från vägen</label><select id="corr"><option value="1">1 km</option><option value="2" selected>2 km</option><option value="4">4 km</option><option value="8">8 km</option></select></div>
         <div class="field"><label for="spill">Tidsspill per stopp (min)</label><input type="number" id="spill" min="0" max="60" step="1" value="5"></div>
       </div>
+      <div class="row2">
+        <div class="field"><label for="kempa">Recharge (Kempower), ström per uttag</label><select id="kempa"><option value="400" selected>400 A</option><option value="200">200 A</option></select></div>
+        <div class="field"><label for="unka">Laddare med okänd strömgräns</label><select id="unka"><option value="500" selected>500 A</option><option value="400">400 A</option><option value="300">300 A</option></select></div>
+      </div>
+      <p class="hint">Laddeffekten räknas som det lägsta av bilens laddkurva, laddarens ström × bilens batterispänning och laddarens maxeffekt. Spänning och ström kommer från NOBIL där värdena är laddarens verkliga gränser, annars från operatörens vanliga hårdvara. Recharge använder Kempower, där strömmen beror på kabeln: 400 A med den kraftigare kabeln, 200 A med standardkabeln.</p>
       <label class="check"><input type="checkbox" id="precond" checked> Förkonditionera batteriet</label>
     </div>
     <div class="sec">
@@ -387,6 +393,24 @@ const NBASE=CARS.length;
 J('d-own').forEach(c=>CARS.push(Object.assign({extra:true,wltp:null},c)));   // kalibrerade mot verklig körning
 const NOWN=CARS.length;
 J('d-cars').forEach(c=>CARS.push(Object.assign({extra:true,wltp:null},c)));
+/* Batterispänning och spänningsomvandlare. 800 V-bilar på en laddare med lägre maxspänning (t.ex. Tesla V3,
+   ca 470–500 V) laddar via bilens egen omvandlare, vars tak (kW) är ungefärligt och bygger på användarrapporter. */
+const V800=[[/EX60/,135],[/iX3 50/,200],[/Ioniq [569]|EV6|EV9/,110],[/Taycan|e-tron GT/,150],[/Q6 e-tron|SQ6|A6 (Avant )?e-tron|S6 e-tron/,135],
+  [/Cybertruck/,200],[/Lotus Eletre|Xpeng (G6|G9|X9|P7\+)|Zeekr 7X|Zeekr 7GT|Mercedes CLA|MG IM[56]/,100]];
+const LFP=/LFP|BYD|Model 3 (RWD|Standard)|Model Y (RWD|Standard)|MG4 51|e-C3|Dolphin/;
+CARS.forEach(c=>{ const v=V800.find(([re])=>re.test(c.name));
+  c.v8=!!v; c.boost=v?v[1]:0; c.lfp=LFP.test(c.name);
+  c.vn=c.v8?720:/I-PACE|XC40|C40|EX40|Polestar 2/.test(c.name)?395:/Tesla|VW ID|Cupra Born|Skoda Enyaq|Audi Q4/.test(c.name)?355:360; });
+const VS=[0,10,20,50,80,90,100], VF_NMC=[0.90,0.94,0.96,1.0,1.05,1.08,1.12], VF_LFP=[0.93,0.98,0.99,1.01,1.03,1.05,1.10];
+const packV=(car,s)=>car.vn*interp(VS,car.lfp?VF_LFP:VF_NMC,s);
+// laddarens gränser [V, A, källa]: NOBIL när värdena är verkliga, annars operatörens vanliga hårdvara
+const CLASSV={Tesla:[470,780],Ionity:[920,500],InCharge:[920,400]};
+function chLimits(ch,set){
+  if(ch[11]>0&&ch[12]>0) return [ch[11],ch[12],'NOBIL'];
+  if(CLASSV[ch[1]]) return [...CLASSV[ch[1]],'op'];
+  if(ch[1]==='Recharge') return [920,set.kempa||400,'kemp'];
+  return [1000,set.unka||500,'unk'];
+}
 const CURVE_SOC=[0,5,10,20,30,40,50,60,70,80,90,100];
 const CURVES={ /* C-rate per SOC point, Laddning!B34:G45 */
  1:[3.1,3.75,4,4,3.75,3.25,2.75,2.25,1.8,1.4,0.85,0.35],
@@ -441,11 +465,21 @@ function carPower(car){ // kW per 1 % SOC step without charger limit
   for(let s=0;s<=100;s++) p[s]=Math.min(interp(CURVE_SOC,c,s)*car.b,car.dc);
   return p;
 }
-function chargeTable(car,kw,G){ // cumulative minutes from 0 % in 1 % steps (Ruttberäkning rows 168–268)
-  const P=car._P||(car._P=carPower(car)); const t=new Float64Array(101);
-  for(let s=1;s<=100;s++){ const p1=Math.min(P[s-1],kw), p2=Math.min(P[s],kw); t[s]=t[s-1]+(car.b/100)/((p1+p2)*G/2)*60; }
-  return t;
+// effekt (kW) som laddaren kan ge vid laddnivå s: ström × batterispänning, eller bilens omvandlartak om
+// laddarens maxspänning är lägre än batteriets; aldrig mer än laddarens maxeffekt
+function chargerKw(car,nd,s){
+  const U=packV(car,s);
+  const p=U<=nd.V?nd.A*U/1000:Math.min(car.boost||50,nd.V*nd.A/1000);
+  return Math.min(p,nd.kw);
 }
+function chargeTable(car,nd,G){ // cumulative minutes from 0 % in 1 % steps (Ruttberäkning rows 168–268)
+  const P=car._P||(car._P=carPower(car)); const t=new Float64Array(101), pw=new Float64Array(101), lim=new Uint8Array(101);
+  for(let s=0;s<=100;s++){ const pc=chargerKw(car,nd,s), pb=P[s]*G; pw[s]=Math.min(pb,pc); lim[s]=pc<pb-0.5?1:0; }
+  for(let s=1;s<=100;s++) t[s]=t[s-1]+(car.b/100)/((pw[s-1]+pw[s])/2)*60;
+  t.pw=pw; t.lim=lim; return t;
+}
+// högsta effekt och om laddaren begränsar, mellan laddnivå a och b
+function chargePeak(tb,a,b){ let pk=0,lim=0; for(let s=Math.max(0,Math.floor(a));s<=Math.min(100,Math.ceil(b));s++){ if(tb.pw[s]>pk){pk=tb.pw[s];} if(tb.lim[s]) lim++; } return {pk,lim:lim>0}; }
 function tAt(tab,s){ s=clamp(s,0,100); const i=Math.min(99,Math.floor(s)); return tab[i]+(s-i)*(tab[i+1]-tab[i]); }
 
 /* ---------- Road graph ---------- */
@@ -723,11 +757,11 @@ function plan(car,R,cands,set,extra){
     let T=tempAt(c.km); if(set.wx){ const w=wxAt(set.wx,c.ch[4],c.ch[5],set.depAbs+at(Tm,c.k,c.t)+before(c.km)); if(w) T=w.T; }
     const dd=c.off*1.3+0.3, cons50=consumption(car,set,50,T,0);
     nodes.push({kind:'stop',c,km:c.km,u:at(U,c.k,c.t),tm:at(Tm,c.k,c.t),e:at(E,c.k,c.t),det:dd*cons50/100/(car.b*battFactor(T))*100,dt:dd/50*60,detKwh:dd*cons50/100,T,
-      G:chargeTempFactor(car,set,T),kw:c.ch[2],price:set.prices[opKey(c.ch[1])]??set.prices['Övriga'],pen:opPenalty(set,c.ch[1])});
+      G:chargeTempFactor(car,set,T),kw:c.ch[2],...(([V,A,src])=>({V,A,lsrc:src}))(chLimits(c.ch,set)),price:set.prices[opKey(c.ch[1])]??set.prices['Övriga'],pen:opPenalty(set,c.ch[1])});
   }
   nodes.push({kind:'end',km,u:U[n-1],tm:Tm[n-1],e:E[n-1],det:0,dt:0});
   const M=nodes.length, tabs=new Map();
-  const tab=nd=>{const key=nd.kw+'|'+nd.G.toFixed(3); if(!tabs.has(key)) tabs.set(key,chargeTable(car,nd.kw,nd.G)); return tabs.get(key);};
+  const tab=nd=>{const key=nd.kw+'|'+nd.V+'|'+nd.A+'|'+nd.G.toFixed(3); if(!tabs.has(key)) tabs.set(key,chargeTable(car,nd,nd.G)); return tabs.get(key);};
   const use=(i,j)=>nodes[j].u-nodes[i].u+nodes[i].det+nodes[j].det;
   const f=new Float64Array(M).fill(Infinity), arr=new Float64Array(M), pred=new Int32Array(M).fill(-1), info=new Array(M);
   f[0]=0; arr[0]=set.s0;
@@ -743,7 +777,7 @@ function plan(car,R,cands,set,extra){
       const tc=tAt(tb,need)-tAt(tb,a), kwh=(need-a)/100*car.b, kr=kwh/(1-set.loss)*nd.price;
       const tstop=tc+set.spill+2*nd.dt;
       const c= set.opt==='kr' ? kr+0.002*tstop+nd.pen*5 : set.opt==='stopp' ? 1000+tstop+nd.pen : tstop+nd.pen;
-      if(f[i]+c<f[j]-1e-9){ f[j]=f[i]+c; pred[j]=i; arr[j]=last?set.sf:set.res; info[j]={from:i,a,need,tc,kwh,kr,tstop}; }
+      if(f[i]+c<f[j]-1e-9){ f[j]=f[i]+c; pred[j]=i; arr[j]=last?set.sf:set.res; info[j]={from:i,a,need,tc,kwh,kr,tstop,tb}; }
     }
   }
   if(!isFinite(f[M-1])){
@@ -911,7 +945,7 @@ const findPlace=name=>PL.findIndex(p=>p[0]===name);
 const state={from:PL.findIndex(p=>p[9]===1), to:PL.findIndex(p=>p[9]===2), vias:[], car:2, opt:'tid', rmode:'fast'};
 const prices=Object.assign({},PRICE0);
 const opPref={}; OPS.forEach(o=>opPref[o]='ok');
-const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','wind','wxfac','regen','cabin','loss'];
+const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','kempa','unka','wind','wxfac','regen','cabin','loss'];
 const checks=['winter','precond'];
 const LS='laddresan.v1';
 (function(){ const d=new Date(); const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); $('#depdate').value=iso; })();
@@ -927,7 +961,7 @@ function settings(){
   $('#sppctv').textContent=clamp(num('sppct')||100,100,125)+' %';
   const s0=clamp(num('s0')||100,1,100), sf=clamp(num('sf')||0,0,90), res=clamp(num('res')||0,0,90), maxsoc=clamp(num('maxsoc')||100,10,100);
   return {s0,sf,res,maxsoc,t0:num('t0')||0,t1:isNaN(num('t1'))?0:num('t1'),spmode:$('#spmode').value,sppct:clamp(num('sppct')||100,100,125),spmax:num('spmax')||110,
-    dep:$('#dep').value||'08:00',load:num('load')||0,winter:$('#winter').checked,minkw:+$('#minkw').value,corr:+$('#corr').value,spill:num('spill')||0,
+    dep:$('#dep').value||'08:00',load:num('load')||0,winter:$('#winter').checked,minkw:+$('#minkw').value,corr:+$('#corr').value,spill:num('spill')||0,kempa:+$('#kempa').value||400,unka:+$('#unka').value||500,
     precond:$('#precond').checked,opPref,prefmode:$('#prefmode').value,anyPref:OPS.some(o=>opPref[o]==='pref'),wind:num('wind')||0,regen:clamp(isNaN(num('regen'))?0.75:num('regen'),0.3,0.95),cabin:isNaN(num('cabin'))?21:num('cabin'),
     loss:clamp((num('loss')||0)/100,0,0.5),prices,opt:state.opt,
     wx:($('#wxmode').value==='fc'&&WX)?WX:null, depAbs:absMinutes($('#depdate').value,$('#dep').value||'08:00'), wxfac:clamp(isNaN(num('wxfac'))?0.7:num('wxfac'),0,1)};
@@ -1052,10 +1086,11 @@ $('#swap').addEventListener('click',()=>{ [state.from,state.to]=[state.to,state.
 if(!(state.car>=0&&state.car<CARS.length)) state.car=2;
 $('#car').value=state.car;
 function carInfo(){ const c=CARS[state.car];
-  if(c.own){ $('#carinfo').textContent=`${nf1.format(c.b)} kWh · max ${c.dc} kW DC · luft- och rullmotstånd anpassade till din förbrukning på plan väg vid 75–135 km/h (${c.src}) · laddkurva: ${c.curve}`; return; }
-  if(!c.extra){ $('#carinfo').textContent=`${nf1.format(c.b)} kWh netto · max ${c.dc} kW DC · WLTP ${c.wltp} km`+(c.pre?'':' · saknar förkonditionering'); return; }
+  const vt=c.v8?` · 800 V-batteri (ca ${c.vn} V), på laddare med lägre maxspänning (t.ex. Tesla V3) högst ca ${c.boost} kW via bilens omvandlare`:` · 400 V-batteri (ca ${c.vn} V)`;
+  if(c.own){ $('#carinfo').textContent=`${nf1.format(c.b)} kWh · max ${c.dc} kW DC · luft- och rullmotstånd anpassade till din förbrukning på plan väg vid 75–135 km/h (${c.src}) · laddkurva: ${c.curve}`+vt; return; }
+  if(!c.extra){ $('#carinfo').textContent=`${nf1.format(c.b)} kWh netto · max ${c.dc} kW DC · WLTP ${c.wltp} km`+(c.pre?'':' · saknar förkonditionering')+vt; return; }
   const w=[c.w90?`${c.w90} Wh/km i 90`:'',c.w120?`${c.w120} Wh/km i 120 km/h`:''].filter(Boolean).join(', ');
-  $('#carinfo').textContent=`${nf1.format(c.b)} kWh använd kapacitet · max ${c.dc} kW DC (uppmätt) · ${w} vid 20 °C (normaliserat, ${c.n} ${c.n>1?'tester':'test'}) · laddkurva: ${c.curve}${c.cnote?' ('+c.cnote+')':''}`+(c.pre?'':' · antas sakna förkonditionering'); }
+  $('#carinfo').textContent=`${nf1.format(c.b)} kWh använd kapacitet · max ${c.dc} kW DC (uppmätt) · ${w} vid 20 °C (normaliserat, ${c.n} ${c.n>1?'tester':'test'}) · laddkurva: ${c.curve}${c.cnote?' ('+c.cnote+')':''}`+(c.pre?'':' · antas sakna förkonditionering')+vt; }
 $('#car').addEventListener('change',()=>{ state.car=+$('#car').value; carInfo(); changed(false); });
 document.querySelectorAll('input[name=rmode]').forEach(r=>{ if(r.value===(state.rmode||'fast')) r.checked=true; r.addEventListener('change',()=>{ state.rmode=r.value; changed(true); }); });
 document.querySelectorAll('input[name=opt]').forEach(r=>{ if(r.value===state.opt) r.checked=true; r.addEventListener('change',()=>{ state.opt=r.value; changed(false); }); });
@@ -1297,7 +1332,7 @@ function renderPlan(){
       const gm='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(c[6].toFixed(5)+','+c[7].toFixed(5));
       h+=`<li class="stop"><div class="t">${clock(set.dep,arrive)}</div><div class="dot"><span>${e.n}</span></div><div class="body"><div class="ttl">${esc(c[0])}</div>
         <div class="meta">${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag · km ${nf0.format(e.km)}${s.node.c.off>0.3?' · '+nf1.format(s.node.c.off)+' km från vägen':''} · <a class="small" href="${gm}" target="_blank" rel="noopener">Visa plats</a></div>
-        <div class="chips"><span class="chip soc">${nf0.format(s.a)} → ${nf0.format(s.need)} %</span>${result.set.anyPref&&opPref[opKey(c[1])]==='pref'?'<span class="chip pref">Föredragen</span>':''}<span class="chip">${nf0.format(s.tc)} min laddning</span><span class="chip">${nf1.format(s.kwh)} kWh</span><span class="chip">${nf0.format(s.kr)} kr</span><span class="chip">vidare ${clock(set.dep,arrive+s.tc+set.spill+s.node.dt)}</span></div>${altText(s)}</div></li>`;
+        <div class="chips"><span class="chip soc">${nf0.format(s.a)} → ${nf0.format(s.need)} %</span>${result.set.anyPref&&opPref[opKey(c[1])]==='pref'?'<span class="chip pref">Föredragen</span>':''}<span class="chip">${nf0.format(s.tc)} min laddning</span>${peakChip(s,result.car)}<span class="chip">${nf1.format(s.kwh)} kWh</span><span class="chip">${nf0.format(s.kr)} kr</span><span class="chip">vidare ${clock(set.dep,arrive+s.tc+set.spill+s.node.dt)}</span></div>${altText(s)}</div></li>`;
       extra+=s.tstop; socDep=s.need; uDep=s.node.u; detDep=s.node.det; }
     else { const p=PL[pts[pts.length-1]];
       h+=`<li><div class="t">${clock(set.dep,tm)}</div><div class="dot"><span style="border-color:var(--ink)"></span></div><div class="body"><div class="ttl">${esc(shortName(p))}</div><div class="meta">Framme med ${nf0.format(res.finalSoc)} % · total restid ${hm(res.total)}</div></div></li>`; }
@@ -1349,7 +1384,7 @@ function renderNotes(){
   <p><b>Val av laddstopp.</b> Alla snabbladdare inom valt avstånd från vägen prövas (${cands.length} st på den här rutten). Dynamisk programmering väljer den kombination som ger kortast restid, lägst kostnad eller färst stopp. Avstickaren till laddaren räknas fram och tillbaka med 1,3 × fågelvägen i 50 km/h.</p>
   <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). ${SITE?'Prognosen kommer från Open-Meteo, timvärden för avresedagen och två dygn framåt.':'Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.'}</p>
   <p><b>Operatörer.</b> Operatörer markerade Undvik används aldrig. Ett stopp hos en operatör som inte är föredragen räknas som 5, 15 eller 45 minuter längre beroende på valet (vid Lägst kostnad 5 kr per minut), så planeraren väljer en föredragen operatör när skillnaden är mindre än så. Med Ladda bara hos föredragna används inga andra.</p>
-  <p><b>Data.</b> ${SITE?'Rutten hämtas från ruttmotorn OSRM med OpenStreetMaps fullständiga vägnät (© OpenStreetMap-bidragsgivare). Laddresans eget vägnät, '+META.roadkm+' km huvudvägar, används för att välja vägtyp i lägena Kortaste och Lägst förbrukning och som reserv om ruttmotorn inte svarar.':'Vägnätet bygger på OpenStreetMap via OSRM ('+META.roadkm+' km huvudvägar).'} Ortlistan har ${META.places} orter. Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
+  <p><b>Data.</b> ${SITE?'Rutten hämtas från ruttmotorn OSRM med OpenStreetMaps fullständiga vägnät (© OpenStreetMap-bidragsgivare). Laddresans eget vägnät, '+META.roadkm+' km huvudvägar, används för att välja vägtyp i lägena Kortaste och Lägst förbrukning och som reserv om ruttmotorn inte svarar.':'Vägnätet bygger på OpenStreetMap via OSRM ('+META.roadkm+' km huvudvägar).'} Ortlistan har ${META.places} orter. Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). Laddplatserna kommer från Open Charge Map (export ${META.ocm}) och supercharge.info (Tesla, hämtad ${META.tesla}). Det är ${META.nch} platser med minst 150 kW. ${META.nobil?'Laddarnas spänning och ström kommer från NOBIL (Energimyndigheten, CC BY 3.0, hämtad '+META.nobil+'), med verkliga värden för '+META.nva+' platser.':''} Kontrollera alltid status och pris i operatörens app före avresa.</p>
   <p><b>Begränsningar.</b> Ingen hänsyn tas till trafik, köer vid laddaren, vägarbeten eller färjor. Ort väljs från en lista över ${META.places} svenska orter med minst 1 000 invånare${SITE?' och de platser du själv sparar under Mina platser':' och sparade adresser'}. Restiden bygger på vald andel av skyltad hastighet utan stopp för mat.</p>`;
 }
 
@@ -1401,8 +1436,13 @@ svg.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId)||!vb)return; c
 const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch0=null; if(!ptrs.size) svg.classList.remove('drag'); };
 svg.addEventListener('pointerup',e=>{ const wasMove=moved; endPtr(e); if(!wasMove) clickMap(e); });
 svg.addEventListener('pointercancel',endPtr);
+const LSRC={NOBIL:'enligt NOBIL',op:'operatörens vanliga hårdvara',kemp:'antagen Kempower-kabel',unk:'antagen'};
+function peakChip(s,car){ if(!s.tb) return ''; const {pk,lim}=chargePeak(s.tb,s.a,s.need), nd=s.node;
+  const why=!lim?'':(car.v8&&packV(car,s.need)>nd.V?`, begränsas av bilens spänningsomvandlare (laddaren max ${nd.V} V)`:`, begränsas av laddaren (${nd.V} V/${nd.A} A, ${LSRC[nd.lsrc]})`);
+  const who=car.v8&&packV(car,s.need)>nd.V?'bilens omvandlare begränsar':'laddaren begränsar';
+  return `<span class="chip${lim?' lim':''}" title="Högsta laddeffekt under stoppet${why}">max ${nf0.format(pk)} kW${lim?' · '+who:''}</span>`; }
 function clickMap(e){ const t=e.target.closest('[data-c]'); if(!t){ $('#pop').hidden=true; return; } const c=CH[+t.dataset.c]; const near=result?result.cands.find(x=>x.ci===+t.dataset.c):null;
-  $('#pop').innerHTML=`<button class="x" type="button" aria-label="Stäng">×</button><b>${esc(c[0])}</b>${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag${c[8]?' · '+esc(c[8]):''}<br>${near?'Km '+nf0.format(near.km)+' längs rutten, '+nf1.format(near.off)+' km från vägen':'Inte längs rutten'}<br><span class="hint">Källa: ${esc(c[9])}${c[10]?', uppdaterad '+esc(c[10]):''}</span><br><a class="small" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${c[6].toFixed(5)},${c[7].toFixed(5)}">Öppna i Google Maps</a>`;
+  $('#pop').innerHTML=`<button class="x" type="button" aria-label="Stäng">×</button><b>${esc(c[0])}</b>${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag${c[8]?' · '+esc(c[8]):''}<br>${near?'Km '+nf0.format(near.km)+' längs rutten, '+nf1.format(near.off)+' km från vägen':'Inte längs rutten'}<br>${(([V,A,src])=>`Max ${V} V och ${A} A per uttag (${LSRC[src]})`)(chLimits(c,settings()))}<br><span class="hint">Källa: ${esc(c[9])}${c[10]?', uppdaterad '+esc(c[10]):''}${c[11]?', spänning och ström från NOBIL':''}</span><br><a class="small" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${c[6].toFixed(5)},${c[7].toFixed(5)}">Öppna i Google Maps</a>`;
   $('#pop').hidden=false; $('#pop .x').addEventListener('click',()=>{$('#pop').hidden=true;}); }
 $('#zin').addEventListener('click',()=>{ const r=svg.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1/1.6); });
 $('#zout').addEventListener('click',()=>{ const r=svg.getBoundingClientRect(); zoomAt(r.left+r.width/2,r.top+r.height/2,1.6); });
@@ -1411,6 +1451,6 @@ let cw=0; new ResizeObserver(()=>{ const w=$('#chart').clientWidth; if(result&&M
 let rw=0; new ResizeObserver(()=>{ const w=svg.getBoundingClientRect().width; if(Math.abs(w-rw)>2){ rw=w; if(vb) setVB(vb.x,vb.y,vb.w,vb.h); } }).observe(svg);
 
 compute();
-window.__laddresan={consumption,chargeTable,tAt,CARS,settings,state,get result(){return result;},get route(){return route;},changed,sweref2wgs,setWX(w){WX=w;},wxPoints,absMinutes,shapeCtx,shapeRange,gmapsLinks};
+window.__laddresan={consumption,chargeTable,chargerKw,chLimits,packV,tAt,CARS,settings,state,get result(){return result;},get route(){return route;},changed,sweref2wgs,setWX(w){WX=w;},wxPoints,absMinutes,shapeCtx,shapeRange,gmapsLinks};
 })();
 </script>

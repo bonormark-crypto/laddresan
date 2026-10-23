@@ -150,7 +150,7 @@ matched = 0
 for c in ded:
     c.pop('vmax', None); c.pop('amax', None)
     near = [(km(c['lat'], c['lon'], n['lat'], n['lon']), n) for n in nob if abs(n['lat'] - c['lat']) < 0.005]
-    near = [x for x in near if x[0] < 0.15]
+    near = [x for x in near if x[0] < 0.15 and ('tesla' in x[1]['owner'].lower()) == (c['op'] == 'Tesla')]  # Tesla och andra kan stå granne
     if not near: continue
     matched += 1
     n = min(near, key=lambda x: x[0])[1]

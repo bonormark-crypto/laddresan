@@ -24,6 +24,8 @@ Ruttplanerare för elbil i Sverige. Laddresan föreslår laddstopp vid snabbladd
 | `data/graph_stage1b.json` | Vägnätet: ca 26 500 km huvudvägar från OpenStreetMap via OSRM |
 | `data/elev_b.json` | Höjd för vägnätets punkter (AWS Terrain Tiles) |
 | `data/chargers.json`, `data/tesla_se.json` | Snabbladdare från 150 kW |
+| `data/nobil_se.json` | Laddarnas spänning och ström enligt NOBIL, sammanställt |
+| `scripts/nobil_check.py` | Mäter hur mycket hårdvarudata NOBIL har (Actions → Kontrollera NOBIL-data) |
 | `data/cars_extra.json` | Fler bilar: kapacitet, vikt, kalibrerat luft- och rullmotstånd, uppmätt laddkurva |
 | `data/cars_own.json`, `scripts/calibrate_own.py` | Två bilar kalibrerade mot verklig körning (TeslaMate) |
 | `scripts/build_cars.py`, `scripts/car_mapping.py` | Bygger `cars_extra.json` från arbetsböckerna Rackvidd_normaliserad.xlsx och Charging_curves.xlsx (kräver `pip install openpyxl`) |
@@ -44,12 +46,14 @@ python scripts/assemble.py          # skapar dist/index.html
 
 - Varje push till `main` bygger om och publicerar sidan på GitHub Pages.
 - Varje måndag hämtar GitHub Actions nya laddplatser, sparar dem i `data/` och publicerar om.
+- NOBIL kräver en API-nyckel, som ligger som hemligheten `NOBIL_API_KEY` i repots inställningar. NOBIL anropas bara från GitHub Actions, aldrig från webbläsaren.
 - Uppdateringen kan också köras för hand: **Actions → Bygg och publicera → Run workflow**.
 
 ## Datakällor och licenser
 
 - Vägnät: © OpenStreetMap-bidragsgivare (ODbL), via OSRM
 - Laddplatser: [Open Charge Map](https://openchargemap.org) (CC BY 4.0) och [supercharge.info](https://supercharge.info)
+- Laddarnas spänning och ström: [NOBIL](https://info.nobil.no) (Energimyndigheten och Enova, CC BY 3.0)
 - Väder: [Open-Meteo](https://open-meteo.com) (CC BY 4.0)
 - Adressökning: [Photon](https://photon.komoot.io) och [Nominatim](https://nominatim.org), © OpenStreetMap-bidragsgivare
 - Höjd: AWS Terrain Tiles (bland annat EU-DEM, SRTM)
