@@ -1045,6 +1045,9 @@ if(SITE){
     if(pc){ const street=addr.slice(0,pc.index).replace(/[,\s]+$/,'').trim();
       const m=/^(.*?)\s+(\d+\s?[a-zA-Z]?)$/.exec(street), st=m?m[2]+' '+m[1]:street;
       if(st) nomi(await get('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=3&countrycodes=se&accept-language=sv&street='+encodeURIComponent(st)+'&postalcode='+pc[1]+pc[2])); }
+    // husnummer i frågan: träffar med samma nummer först (Photon ger ibland bara gatan)
+    const hn=/(?:^|\s)(\d{1,4}[a-zA-Z]?)(?=[\s,]|$)/.exec(addr.replace(/\b\d{3}\s?\d{2}\b/,''));
+    if(hn){ const re=new RegExp('(^|\\s)'+hn[1]+'(?=[\\s,]|$)','i'); hits.sort((a,b)=>(re.test(b.label)?1:0)-(re.test(a.label)?1:0)); }
     return hits.slice(0,4);
   };
   const saveFav=(name,addr,h)=>{
