@@ -117,11 +117,18 @@ OPMAP = [('tesla', 'Tesla'), ('ionity', 'Ionity'), ('circle k', 'Circle K'), ('i
          ('chargenode', 'ChargeNode'), ('eviny', 'Eviny'), ('hedin', 'Hedin'), ('preem', 'Preem'), ('kwatt', 'kWatt'),
          ('spirii', 'Spirii'), ('cheap charge', 'Cheap Charge'), ('edri', 'EDRI'), ('nima', 'Nima'), ('ebb charge', 'EBB Charge'),
          ('reload', 'Reload'), ('virta', 'Virta')]
-def op_nobil(oper, owner):
+def op_nobil(oper, owner, name=''):
+    oper = '' if oper.strip().lower() in ('operator', 'owner') else oper
+    owner = '' if owner.strip().lower() in ('operator', 'owner') else owner
     t = f' {oper} {owner} '.lower()
     if oper.strip().lower() == 'mer' or ' mer ' in t: return 'Mer'
     for k, v in OPMAP:
-        if k in t: return v
+        if k in t:
+            if v == 'Virta':   # Virta är en plattform; operatören står ofta först i namnet (t.ex. "OKQ8 ...")
+                nm = ' ' + name.lower().lstrip('*') + ' '
+                for k2, v2 in OPMAP:
+                    if v2 != 'Virta' and nm.startswith(' ' + k2): return v2
+            return v
     o = (oper or owner).replace('(Chargers)', '').replace('&amp;', '&').strip()
     for x in (' AB', ' Sverige', ' Sweden', ' Nordic', ' ApS'):
         o = o.replace(x, '')
@@ -177,17 +184,28 @@ ocm_sites = [c for c in ded if c['op'] != 'Tesla']
 is_tesla = lambda n: 'tesla' in (n.get('owner', '') + ' ' + n.get('oper', '')).lower()
 if len(nob) >= 500 and 'name' in nob[0]:
     others = []
+    bad = 0
     for n in sorted(nob, key=lambda n: (-n['kw'], -n['n'])):
-        if is_tesla(n) or any(k in (n['owner'] + ' ' + n['oper']).lower() for k in TRUCK): continue
-        # samma operatör inom 60 m räknas som en plats
-        dup = next((d for d in others if d['op'] == n['op'] and km(n['lat'], n['lon'], d['lat'], d['lon']) < 0.06), None)
-        if dup: dup['n'] += n['n']; continue
-        c = dict(name=n['name'], town=n['town'], lat=n['lat'], lon=n['lon'], kw=n['kw'], n=n['n'], op=n['op'], src='NOBIL', upd=n['upd'])
+        if is_tesla(n) or any(k in (n['owner'] + ' ' + n['oper'] + ' ' + n['name']).lower() for k in TRUCK + (' truck ',)): continue
+        # poster med * först har ofta fel position, och några danska Q8-platser står som svenska
+        if n['name'].startswith('*') or not (55.2 < n['lat'] < 69.1 and 10.9 < n['lon'] < 24.2): bad += 1; continue
+        op = op_nobil(n['oper'], n['owner'], n['name'])
+        # samma operatör inom 100 m räknas som en plats (t.ex. OKQ8 som finns både direkt och via Virta)
+        dup = next((d for d in others if d['op'] == op and km(n['lat'], n['lon'], d['lat'], d['lon']) < 0.1), None)
+        if dup: dup['n'] = max(dup['n'], n['n']); continue
+        c = dict(name=n['name'], town=n['town'], lat=n['lat'], lon=n['lon'], kw=n['kw'], n=n['n'], op=op, src='NOBIL', upd=n['upd'])
         if n['v'] and n['a']: c['vmax'], c['amax'] = n['v'], n['a']
         others.append(c)
     miss = [c for c in ocm_sites if not any(km(c['lat'], c['lon'], d['lat'], d['lon']) < 0.3 for d in others)]
-    print(f'NOBIL: {len(others)} platser utom Tesla. Open Charge Map har {len(miss)} platser som saknas i NOBIL (används inte):',
-          '; '.join(f"{c['name']} ({c['op']}, {c['kw']} kW)" for c in miss[:40]))
+    # NOBIL är inte helt komplett (t.ex. IONITY Ytterån saknas). Platser som bara finns i Open Charge Map tas med
+    # om operatören är ett känt laddnät, men inte lastbilsladdare eller poster med uppenbart fel position.
+    KNOWN = {'Ionity', 'Circle K', 'Recharge', 'OKQ8', 'E.ON', 'InCharge', 'Mer', 'Allego', 'Virta', 'Eways', 'St1', 'Jolt',
+             'ChargeNode', 'Spirii', 'Monta', 'kWatt', 'Fastned', 'Clever'}
+    keep = [c for c in miss if c['op'] in KNOWN and not any(k in c['name'].lower() for k in ('lastbil', 'truck'))
+            and not (float(c['lat']).is_integer() or float(c['lon']).is_integer())]
+    others += keep
+    print(f'NOBIL: {len(others) - len(keep)} platser utom Tesla ({bad} med fel position borttagna). Open Charge Map har {len(miss)} platser som saknas i NOBIL, '
+          f'{len(keep)} tas med:', '; '.join(f"{c['name']} ({c['op']}, {c['kw']} kW)" for c in keep))
 else:
     others = ocm_sites
     print('NOBIL saknas, använder Open Charge Map', file=sys.stderr)

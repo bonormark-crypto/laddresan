@@ -20,7 +20,7 @@ Ruttplanerare för elbil i Sverige. Laddresan föreslår laddstopp vid snabbladd
 | --- | --- |
 | `src/index.src.html` | Hela appen (HTML, CSS och JavaScript) med platshållare för data |
 | `scripts/assemble.py` | Bygger `dist/index.html` från mallen och datan |
-| `scripts/update_chargers.py` | Hämtar nya laddplatser från Open Charge Map och supercharge.info |
+| `scripts/update_chargers.py` | Hämtar nya laddplatser från NOBIL, supercharge.info och Open Charge Map |
 | `data/graph_stage1b.json` | Vägnätet: ca 26 500 km huvudvägar från OpenStreetMap via OSRM |
 | `data/elev_b.json` | Höjd för vägnätets punkter (AWS Terrain Tiles) |
 | `data/chargers.json`, `data/tesla_se.json` | Snabbladdare från 150 kW |
@@ -52,8 +52,7 @@ python scripts/assemble.py          # skapar dist/index.html
 ## Datakällor och licenser
 
 - Vägnät: © OpenStreetMap-bidragsgivare (ODbL), via OSRM
-- Laddplatser: [Open Charge Map](https://openchargemap.org) (CC BY 4.0) och [supercharge.info](https://supercharge.info)
-- Laddarnas spänning och ström: [NOBIL](https://info.nobil.no) (Energimyndigheten och Enova, CC BY 3.0)
+- Laddplatser: [NOBIL](https://info.nobil.no), Sveriges officiella register enligt AFIR (Energimyndigheten och Enova, CC BY 3.0), med spänning och ström per uttag. Teslas platser från [supercharge.info](https://supercharge.info). Några platser som saknas i NOBIL från [Open Charge Map](https://openchargemap.org) (CC BY 4.0).
 - Väder: [Open-Meteo](https://open-meteo.com) (CC BY 4.0)
 - Adressökning: [Photon](https://photon.komoot.io) och [Nominatim](https://nominatim.org), © OpenStreetMap-bidragsgivare
 - Höjd: AWS Terrain Tiles (bland annat EU-DEM, SRTM)
