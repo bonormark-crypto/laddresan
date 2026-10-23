@@ -70,7 +70,7 @@ def main():
     tot = collections.Counter(); have = collections.defaultdict(collections.Counter)
     sites = collections.defaultdict(set); sites_have = collections.defaultdict(lambda: collections.defaultdict(set))
     ops = collections.defaultdict(collections.Counter); values = collections.defaultdict(collections.Counter)
-    rows = []; combos = collections.Counter(); opcombo = collections.defaultdict(collections.Counter); ratio = collections.Counter(); manuop = collections.Counter()
+    rows = []; combos = collections.Counter(); opcombo = collections.defaultdict(collections.Counter); ratio = collections.Counter(); manuop = collections.Counter(); opratio = collections.defaultdict(collections.Counter)
     for s in st:
         md = s.get('csmd') or {}; at = s.get('attr') or {}
         sattr = at.get('st') or {}
@@ -99,6 +99,7 @@ def main():
                 combos[(kw, V, A)] += 1; opcombo[op][(V, A)] += 1
                 if V and A:
                     r = V * A / 1000 / kw
+                    opratio[op]['tot'] += 1; opratio[op]['der' if 0.9 <= r <= 1.1 else 'hi' if r > 1.1 else 'lo'] += 1
                     ratio['V\u00d7A ungef\u00e4r lika med nominell effekt (0,9\u20131,1)' if 0.9 <= r <= 1.1 else 'V\u00d7A st\u00f6rre \u00e4n nominell effekt' if r > 1.1 else 'V\u00d7A mindre \u00e4n nominell effekt'] += 1
                 ops[op]['n'] += 1
                 for kk in found:
@@ -127,6 +128,9 @@ def main():
     L += ['', '## Per operatör: vanligaste V/A-par (150 kW eller mer)', '', '| Operatör | V/A-par (antal uttag) |', '| --- | --- |']
     for op, c in sorted(ops.items(), key=lambda x: -x[1]['n'])[:25]:
         L.append(f'| {op} | ' + ', '.join(f'{V:g} V/{A:g} A ({n})' if V and A else f'saknas ({n})' for (V, A), n in opcombo[op].most_common(6)) + ' |')
+    L += ['', '## Per operatör: V×A mot nominell effekt (150 kW eller mer)', '', '| Operatör | Med V och A | V×A ≈ nominell | V×A större | V×A mindre |', '| --- | --- | --- | --- | --- |']
+    for op, c in sorted(opratio.items(), key=lambda x: -x[1]['tot'])[:30]:
+        L.append(f"| {op} | {c['tot']} | {pct(c['der'], c['tot'])} | {pct(c['hi'], c['tot'])} | {pct(c['lo'], c['tot'])} |")
     L += ['', '## Tillverkare per operatör och effekt (alla DC-uttag)', '']
     L += [f'- {k}: {n}' for k, n in manuop.most_common(30)] or ['- inga']
     L += ['', '## Alla attribut i dumpen', '', '| ID | Namn | Nivå | Antal |', '| --- | --- | --- | --- |']
