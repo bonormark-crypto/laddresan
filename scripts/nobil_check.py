@@ -27,16 +27,22 @@ def fetch(key):
 
 
 def val(a):
-    v = (a.get('trans') or a.get('attrval') or '').strip()
+    t, v = (a.get('trans') or '').strip(), str(a.get('attrval') or '').strip()
+    v = v if (v and (not t or t == (a.get('attrname') or '').strip())) else (t or v)
     return '' if v.lower() in ('', '-', 'unknown', 'ukjent', 'okänd', 'n/a') else v
 
 
 def kind(a):
-    tid, name = str(a.get('attrtypeid', '')), a.get('attrname', '') or ''
+    tid = str(a.get('attrtypeid', ''))
     for k in IDS:
-        if tid in IDS[k] or NAMES[k].search(name):
+        if tid in IDS[k]:
             return k
     return None
+
+
+def num(v):
+    m = re.search(r'\d+(?:[.,]\d+)?', v or '')
+    return float(m.group(0).replace(',', '.')) if m else None
 
 
 def dc_kw(conn):
@@ -64,7 +70,7 @@ def main():
     tot = collections.Counter(); have = collections.defaultdict(collections.Counter)
     sites = collections.defaultdict(set); sites_have = collections.defaultdict(lambda: collections.defaultdict(set))
     ops = collections.defaultdict(collections.Counter); values = collections.defaultdict(collections.Counter)
-    rows = []
+    rows = []; combos = collections.Counter(); opcombo = collections.defaultdict(collections.Counter); ratio = collections.Counter(); manuop = collections.Counter()
     for s in st:
         md = s.get('csmd') or {}; at = s.get('attr') or {}
         sattr = at.get('st') or {}
@@ -86,7 +92,14 @@ def main():
             tot[k] += 1; sites[k].add(md.get('id'))
             for kk, v in found.items():
                 have[k][kk] += 1; sites_have[k][kk].add(md.get('id')); values[kk][v] += 1
+            V, A = num(found.get('volt')), num(found.get('amp'))
+            if found.get('manu'):
+                manuop[f"{op}, {kw} kW: {found['manu']}"] += 1
             if k == '150 kW eller mer':
+                combos[(kw, V, A)] += 1; opcombo[op][(V, A)] += 1
+                if V and A:
+                    r = V * A / 1000 / kw
+                    ratio['V\u00d7A ungef\u00e4r lika med nominell effekt (0,9\u20131,1)' if 0.9 <= r <= 1.1 else 'V\u00d7A st\u00f6rre \u00e4n nominell effekt' if r > 1.1 else 'V\u00d7A mindre \u00e4n nominell effekt'] += 1
                 ops[op]['n'] += 1
                 for kk in found:
                     ops[op][kk] += 1
@@ -105,8 +118,17 @@ def main():
     for op, c in sorted(ops.items(), key=lambda x: -x[1]['n'])[:25]:
         L.append(f'| {op} | {c["n"]} | ' + ' | '.join(pct(c[x], c['n']) for x in ('volt', 'amp', 'manu')) + ' |')
     for kk in ('manu', 'volt', 'amp'):
-        L += ['', f'## Vanligaste värden: {LABEL[kk]}', '']
-        L += [f'- {v}: {n}' for v, n in values[kk].most_common(15)] or ['- inga']
+        L += ['', f'## Vanligaste värden: {LABEL[kk]} (alla DC-uttag)', '']
+        L += [f'- {v}: {n}' for v, n in values[kk].most_common(20)] or ['- inga']
+    L += ['', '## Uttag på 150 kW eller mer: V×A jämfört med nominell effekt', '']
+    L += [f'- {k}: {n}' for k, n in ratio.most_common()]
+    L += ['', '## Uttag på 150 kW eller mer: vanligaste kombinationer', '', '| Nominell kW | V | A | Uttag |', '| --- | --- | --- | --- |']
+    L += [f'| {kw} | {V} | {A} | {n} |' for (kw, V, A), n in combos.most_common(30)]
+    L += ['', '## Per operatör: vanligaste V/A-par (150 kW eller mer)', '', '| Operatör | V/A-par (antal uttag) |', '| --- | --- |']
+    for op, c in sorted(ops.items(), key=lambda x: -x[1]['n'])[:25]:
+        L.append(f'| {op} | ' + ', '.join(f'{V:g} V/{A:g} A ({n})' if V and A else f'saknas ({n})' for (V, A), n in opcombo[op].most_common(6)) + ' |')
+    L += ['', '## Tillverkare per operatör och effekt (alla DC-uttag)', '']
+    L += [f'- {k}: {n}' for k, n in manuop.most_common(30)] or ['- inga']
     L += ['', '## Alla attribut i dumpen', '', '| ID | Namn | Nivå | Antal |', '| --- | --- | --- | --- |']
     L += [f'| {i} | {n} | {lv} | {c} |' for (i, n, lv), c in sorted(attrnames.items(), key=lambda x: (x[0][2], int(x[0][0]) if x[0][0].isdigit() else 999))]
     rep = '\n'.join(L) + '\n'
