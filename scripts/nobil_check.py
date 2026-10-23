@@ -135,6 +135,31 @@ def main():
     L += [f'- {k}: {n}' for k, n in manuop.most_common(30)] or ['- inga']
     L += ['', '## Alla attribut i dumpen', '', '| ID | Namn | Nivå | Antal |', '| --- | --- | --- | --- |']
     L += [f'| {i} | {n} | {lv} | {c} |' for (i, n, lv), c in sorted(attrnames.items(), key=lambda x: (x[0][2], int(x[0][0]) if x[0][0].isdigit() else 999))]
+    # fält för urval av platser (bara uttag på DC minst 150 kW)
+    ex = collections.defaultdict(collections.Counter); sample = []
+    for s_ in st:
+        md = s_.get('csmd') or {}; at = s_.get('attr') or {}
+        conns = (at.get('conn') or {}).values()
+        fast = [c for c in conns if (dc_kw(c) or 0) >= 150]
+        if not fast: continue
+        ex['Station_status'][str(md.get('Station_status'))] += 1
+        ex['Land_code'][str(md.get('Land_code'))] += 1
+        for k_, x in (at.get('st') or {}).items():
+            if k_ in ('2', '3', '6', '7', '21', '22', '24'): ex[f"st {k_} {x.get('attrname')}"][val(x) or '(tom)'] += 1
+        for c in fast:
+            for k_ in ('1', '4', '17', '18', '19', '20', '25', '26'):
+                x = c.get(k_)
+                if x: ex[f"conn {k_} {x.get('attrname')}"][val(x) or '(tom)'] += 1
+            ex['conn 5 kapacitet'][(c.get('5') or {}).get('trans', '')] += 1
+        ex['uttag DC150 per plats'][str(len(fast))] += 1
+        ex['unika EVSE ID DC150 per plats'][str(len({(c.get('28') or {}).get('attrval') or id(c) for c in fast}))] += 1
+        ex['Number_charging_points'][str(md.get('Number_charging_points'))] += 1
+        ex['Owned_by'][(md.get('Owned_by') or '').strip()] += 1
+        if len(sample) < 2: sample.append(s_)
+    L += ['', '## Fält för urval (platser med DC minst 150 kW)']
+    for k_, c in ex.items():
+        L += ['', f'### {k_}', ''] + [f'- {v}: {n}' for v, n in c.most_common(60 if k_ == 'Owned_by' else 25)]
+    L += ['', '## Exempel på plats (rå JSON)', '', '```', json.dumps(sample, ensure_ascii=False, indent=1)[:12000], '```']
     rep = '\n'.join(L) + '\n'
     print(rep)
     if a.out:
