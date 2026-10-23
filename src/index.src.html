@@ -206,7 +206,7 @@ tr.clickable{cursor:pointer}
         <div class="field"><label for="favname">Namn</label><input type="text" id="favname" maxlength="40" placeholder="t.ex. Hem eller Stugan"></div>
         <div class="field"><label for="favaddr">Adress</label><input type="text" id="favaddr" maxlength="120" placeholder="Gatuadress och ort"></div>
         <div class="btnrow"><button type="button" class="btn" id="favadd">Sök och spara</button></div>
-        <div class="hint" id="favstat" aria-live="polite">Platserna sparas bara i den här webbläsaren. Adressen slås upp i OpenStreetMap (Photon och Nominatim).</div>
+        <div class="hint" id="favstat" aria-live="polite">Platserna sparas bara i den här webbläsaren. Adressen slås upp i OpenStreetMap (Photon och Nominatim). Adresser du väljer i Från, Till eller som mellanstation sparas också här.</div>
         <ul class="favhits" id="favhits"></ul>
       </div></details>
       <div class="field" style="margin-top:10px"><span class="lbl" id="rmlbl">Vägval</span>
@@ -979,20 +979,30 @@ const shortName=p=>p[9]?p[10]:p[0];
 /* ---------- Combobox ---------- */
 const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const PN=PL.map(p=>norm(p[0]));
+let GEO=null; // adressökning i Från, Till och mellanstationer (bara webbplatsen), sätts längre ned
 function combo(input,get,set){
   const wrap=input.parentElement; const list=document.createElement('ul'); list.className='combo-list'; list.setAttribute('role','listbox'); list.hidden=true; list.id=input.id+'-list'; wrap.appendChild(list);
   input.setAttribute('role','combobox'); input.setAttribute('aria-controls',list.id); input.setAttribute('aria-expanded','false');
-  let items=[], act=-1;
+  let items=[], act=-1, hits=[], gseq=0, gtimer=0;
   const show=()=>{ const q=norm(input.value.trim()); items=[];
     const sv=PL.map((p,i)=>i).filter(i=>PL[i][9]&&(!q||PN[i].includes(q)||norm(PL[i][10]||'').includes(q)));
     let rest=[]; if(q){ PL.forEach((p,i)=>{ if(p[9])return; const n=PN[i]; if(n.startsWith(q)) rest.push([0,-p[2],i]); else if(n.includes(q)) rest.push([1,-p[2],i]); }); rest.sort((a,b)=>a[0]-b[0]||a[1]-b[1]); rest=rest.slice(0,40).map(r=>r[2]); }
     else rest=PL.map((p,i)=>i).filter(i=>!PL[i][9]).sort((a,b)=>PL[b][2]-PL[a][2]).slice(0,25);
     let h=''; if(sv.length){ h+='<li class="grp" role="presentation">Sparade platser</li>'; sv.forEach(i=>{items.push(i);h+=`<li role="option" id="${input.id}-o${items.length-1}" data-i="${i}" class="saved">${esc(PL[i][0])}<small>${esc(PL[i][11]||'')}</small></li>`;}); }
     if(rest.length){ h+='<li class="grp" role="presentation">'+(q?'Orter':'Största orterna')+'</li>'; rest.forEach(i=>{items.push(i);h+=`<li role="option" id="${input.id}-o${items.length-1}" data-i="${i}">${esc(PL[i][0])}<small>${esc(LAN[PL[i][1]]||'')}</small></li>`;}); }
-    if(!items.length) h='<li class="grp" role="presentation">Ingen ort matchar</li>';
-    list.innerHTML=h; list.hidden=false; input.setAttribute('aria-expanded','true'); act=-1; };
+    const addr=GEO&&q.length>=4&&(/\d/.test(q)||items.length<3);
+    if(!items.length&&!addr) h='<li class="grp" role="presentation">Ingen ort matchar</li>';
+    if(addr) h+='<li class="grp" role="presentation">Adresser</li><li class="grp addrwait" role="presentation">Söker adressen …</li>';
+    list.innerHTML=h; list.hidden=false; input.setAttribute('aria-expanded','true'); act=-1;
+    clearTimeout(gtimer); hits=[];
+    if(addr){ const raw=input.value.trim(), my=++gseq;
+      gtimer=setTimeout(async()=>{ let r=[]; try{ r=await GEO.geocode(raw); }catch(e){}
+        if(my!==gseq||list.hidden) return; hits=r; const w=list.querySelector('.addrwait'); if(!w) return;
+        if(!r.length){ w.textContent='Ingen adress hittades. Prova gatuadress och ort, eller lägg till postnumret.'; return; }
+        w.outerHTML=r.map((x,k)=>`<li role="option" id="${input.id}-a${k}" data-a="${k}">${esc(x.label)}<small>${esc(x.sub||'')}</small></li>`).join(''); },450); } };
   const hide=()=>{ list.hidden=true; input.setAttribute('aria-expanded','false'); input.removeAttribute('aria-activedescendant'); };
   const pick=i=>{ set(i); input.value=placeLabel(PL[i]); hide(); };
+  const pickEl=o=>{ if(o.dataset.a!==undefined){ const i=GEO.add(hits[+o.dataset.a]); if(i>=0) pick(i); return; } pick(+o.dataset.i); };
   input.value=get()>=0?placeLabel(PL[get()]):'';
   input.addEventListener('focus',()=>{ input.select(); show(); });
   input.addEventListener('input',show);
@@ -1000,11 +1010,11 @@ function combo(input,get,set){
     if(list.hidden&&(e.key==='ArrowDown')){show();}
     const opts=[...list.querySelectorAll('li[role=option]')];
     if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); act=clamp(act+(e.key==='ArrowDown'?1:-1),0,opts.length-1); opts.forEach((o,k)=>o.setAttribute('aria-selected',k===act)); if(opts[act]){opts[act].scrollIntoView({block:'nearest'}); input.setAttribute('aria-activedescendant',opts[act].id);} }
-    else if(e.key==='Enter'){ e.preventDefault(); const o=opts[act>=0?act:0]; if(o) pick(+o.dataset.i); input.blur(); }
+    else if(e.key==='Enter'){ e.preventDefault(); const o=opts[act>=0?act:0]; if(o) pickEl(o); input.blur(); }
     else if(e.key==='Escape'){ hide(); input.value=placeLabel(PL[get()]); }
   });
-  list.addEventListener('mousedown',e=>{ const li=e.target.closest('li[role=option]'); if(li){ e.preventDefault(); pick(+li.dataset.i); input.blur(); } });
-  input.addEventListener('blur',()=>{ setTimeout(()=>{ hide(); if(get()>=0) input.value=placeLabel(PL[get()]); },120); });
+  list.addEventListener('mousedown',e=>{ const li=e.target.closest('li[role=option]'); if(li){ e.preventDefault(); pickEl(li); input.blur(); } });
+  input.addEventListener('blur',()=>{ setTimeout(()=>{ hide(); gseq++; if(get()>=0) input.value=placeLabel(PL[get()]); },120); });
   return {refresh(){ input.value=get()>=0?placeLabel(PL[get()]):''; }};
 }
 const cFrom=combo($('#from'),()=>state.from,i=>{state.from=i;changed(true);});
@@ -1045,6 +1055,14 @@ if(SITE){
     $('#favname').value=''; $('#favaddr').value=''; $('#favhits').innerHTML='';
     favStat(`${f.name} är sparad (${h.label}). Välj den under Sparade platser i Från eller Till.`);
   };
+  // en adress som väljs i Från, Till eller som mellanstation sparas som en av Mina platser (namn = adressen)
+  GEO={geocode,add(h){ if(!h) return -1;
+    const j=FAVS.findIndex(f=>Math.abs(f.lat-h.lat)<0.0006&&Math.abs(f.lon-h.lon)<0.001); if(j>=0) return FAV0+j;
+    const f={name:h.label,addr:h.label,lat:+h.lat.toFixed(5),lon:+h.lon.toFixed(5),sub:h.sub||''};
+    const [x,y]=wgs2sweref(f.lat,f.lon); if(snapGraph(x,y).d>30){ $('#favbox').open=true; favStat(`${h.label} ligger mer än 30 km från planerarens vägnät och kan inte användas.`,true); return -1; }
+    FAVS.push(f); if(!saveFavs()){ FAVS.pop(); return -1; }
+    pushFav(f,FAVS.length-1); PN.push(norm(f.name)); renderFavs(); return PL.length-1; }};
+  document.querySelectorAll('#from,#to').forEach(i=>i.placeholder='Sök ort, adress eller sparad plats');
   let lastHits=[];
   $('#favhits').addEventListener('click',e=>{ const b=e.target.closest('button[data-h]'); if(!b) return;
     const name=$('#favname').value.trim(); if(!name){ favStat('Fyll i ett namn först.',true); return; }
