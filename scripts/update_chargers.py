@@ -101,6 +101,63 @@ for name, status, lat, lon, stalls, kw, other, dt in tesla:
     ded.append(dict(name='Tesla Supercharger ' + nm, town=nm.split(',')[0].split(' - ')[0], lat=lat, lon=lon, kw=kw,
                     n=stalls, op='Tesla', src='supercharge.info', upd=dt))
 
+# --- NOBIL: laddarens spänning och ström (AFIR-data via Energimyndigheten, CC BY 3.0) ---
+# NOBIL anger spänning och ström för nästan alla uttag, men oftast framräknade ur effekten med en fast
+# spänning (t.ex. 1000 V/150 A för 150 kW). Bara när spänning × ström är minst 10 % större än effekten
+# räknas värdena som laddarens verkliga gränser. Sammanställningen sparas i data/nobil_se.json så att
+# den kan användas även om NOBIL inte går att nå. API:t anropas bara här, aldrig från webbläsaren.
+NOBIL = f'{S}/data/nobil_se.json'
+def nobil_fetch(key):
+    import re, urllib.parse
+    q = urllib.parse.urlencode(dict(apikey=key, countrycode='SWE', format='json', file='false'))
+    d = json.loads(urllib.request.urlopen(f'https://nobil.no/api/server/datadump.php?{q}', timeout=180).read().decode('utf-8', 'replace'))
+    def num(a):
+        if not a: return None
+        t, v = (a.get('trans') or '').strip(), str(a.get('attrval') or '').strip()
+        v = v if v and (not t or t == (a.get('attrname') or '').strip()) else (t or v)
+        m = re.search(r'\d+(?:[.,]\d+)?', v)
+        return float(m.group(0).replace(',', '.')) if m else None
+    out = []
+    for s in d.get('chargerstations') or []:
+        md = s.get('csmd') or {}
+        pos = re.findall(r'-?\d+\.\d+', md.get('Position') or '')
+        if len(pos) < 2: continue
+        best = None
+        for c in ((s.get('attr') or {}).get('conn') or {}).values():
+            t = (c.get('5') or {}).get('trans') or ''
+            m = re.search(r'(\d+)\s*kW', t)
+            if 'DC' not in t.upper() or not m: continue
+            kw, V, A = int(m.group(1)), num(c.get('12')), num(c.get('31'))
+            real = bool(V and A and V * A / 1000 >= 1.1 * kw and V <= 1500 and A <= 1500)
+            k = (kw, real, V or 0, A or 0)
+            if best is None or k > best: best = k
+        if best and best[0] >= 150:
+            out.append(dict(lat=round(float(pos[0]), 5), lon=round(float(pos[1]), 5), kw=best[0], owner=(md.get('Owned_by') or '').strip(),
+                            v=int(best[2]) if best[1] else 0, a=int(best[3]) if best[1] else 0))
+    return out
+nob = json.load(open(NOBIL)) if os.path.exists(NOBIL) else []
+if os.environ.get('NOBIL_API_KEY'):
+    try:
+        n2 = nobil_fetch(os.environ['NOBIL_API_KEY'].strip())
+        if len(n2) >= 500:
+            nob = n2; meta['nobil'] = today
+            json.dump(nob, open(NOBIL, 'w'), ensure_ascii=False, separators=(',', ':'))
+        else:
+            print(f'NOBIL: bara {len(n2)} platser, behåller tidigare data', file=sys.stderr)
+    except Exception as e:
+        print('NOBIL gick inte att nå, behåller tidigare data:', type(e).__name__, file=sys.stderr)
+matched = 0
+for c in ded:
+    c.pop('vmax', None); c.pop('amax', None)
+    near = [(km(c['lat'], c['lon'], n['lat'], n['lon']), n) for n in nob if abs(n['lat'] - c['lat']) < 0.005]
+    near = [x for x in near if x[0] < 0.15]
+    if not near: continue
+    matched += 1
+    n = min(near, key=lambda x: x[0])[1]
+    if n['v'] and n['a']:
+        c['vmax'], c['amax'] = n['v'], n['a']
+print(f'NOBIL: {len(nob)} platser, {matched} matchade, {sum("vmax" in c for c in ded)} med verklig spänning och ström')
+
 json.dump(ded, open(f'{S}/data/chargers.json', 'w'), ensure_ascii=False)
 json.dump(meta, open(meta_path, 'w'), ensure_ascii=False)
 print(f'{len(ded)} laddplatser (OCM {sum(c["src"] == "OCM" for c in ded)}, Tesla {sum(c["op"] == "Tesla" for c in ded)})')

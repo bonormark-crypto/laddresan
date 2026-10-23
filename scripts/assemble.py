@@ -59,13 +59,13 @@ C = []
 for c in json.load(open(f'{S}/data/chargers.json')):
     x, y = [v / 1000 for v in T.transform(c['lon'], c['lat'])]
     C.append([c['name'], c['op'], c['kw'], c['n'], round(x, 2), round(y, 2), c['lat'], c['lon'], c['town'],
-              c['src'] == 'OCM' and 'Open Charge Map' or 'supercharge.info', c['upd']])
+              c['src'] == 'OCM' and 'Open Charge Map' or 'supercharge.info', c['upd'], c.get('vmax', 0), c.get('amax', 0)])
 # laddplatser som saknas i de öppna källorna
 EXTRA = [('Klevshult E4 (Plugit, tidigare GreenStop/ChargeNode)', 'Övriga', 400, 8, 57.3552, 14.1014, 'Klevshult', 'pressmeddelanden ChargeNode/Plugit', '2026-03'),
          ('ChargeNode Rasta Ödeshög, Lievägen 2', 'ChargeNode', 400, 24, 58.23317, 14.67172, 'Ödeshög', 'uppgift från användare', '2026-10')]
 for name, op, kw, n, la, lo, town, srcn, upd in EXTRA:
     x, y = [v / 1000 for v in T.transform(lo, la)]
-    C.append([name, op, kw, n, round(x, 2), round(y, 2), la, lo, town, srcn, upd])
+    C.append([name, op, kw, n, round(x, 2), round(y, 2), la, lo, town, srcn, upd, 0, 0])
 
 MON = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december']
 def sv_date(iso, day=True):
@@ -81,6 +81,7 @@ roadkm = round(sum(sum(e[4]) for e in E))
 meta = {'roadkm': f'{roadkm:,}'.replace(',', ' '), 'places': len(places) - nsaved, 'nsaved': nsaved,
         'ocm': sv_date(cm['ocm'], False) if cm.get('ocm') else 'april 2026',
         'tesla': sv_date(cm['tesla']) if cm.get('tesla') else '20 oktober 2026', 'nch': len(C),
+        'nobil': sv_date(cm['nobil']) if cm.get('nobil') else '', 'nva': sum(1 for c in C if c[11]),
         'built': datetime.date.today().isoformat()}
 graph = {'n': len(jn), 'e': E}
 sep = (',', ':')

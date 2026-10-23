@@ -29,9 +29,11 @@ jobs:
       - name: Installera Python-paket
         run: pip install -r requirements.txt
 
-      - name: Uppdatera laddplatser (Open Charge Map + supercharge.info)
+      - name: Uppdatera laddplatser (Open Charge Map + supercharge.info + NOBIL)
         if: github.event_name != 'push'
         continue-on-error: true   # ett tillfälligt fel hos en källa ska inte stoppa publiceringen
+        env:
+          NOBIL_API_KEY: ${{ secrets.NOBIL_API_KEY }}
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/openchargemap/ocm-export.git /tmp/ocm
           git -C /tmp/ocm sparse-checkout set data/SE
