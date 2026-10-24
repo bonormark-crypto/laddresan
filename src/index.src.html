@@ -282,6 +282,8 @@ tr.clickable{cursor:pointer}
         <div class="field"><label for="load">Last (kg)</label><input type="number" id="load" min="0" max="800" step="10" value="120"></div>
       </div>
       <label class="check"><input type="checkbox" id="winter"> Vinterdäck (Crr × 1,25)</label>
+      <div class="field" style="margin-top:8px"><label for="road">Vägbana</label><select id="road"><option value="fc" selected>Enligt väderprognosen (annars torr)</option><option value="dry">Torr</option><option value="damp">Fuktig</option><option value="wet">Våt</option><option value="vwet">Mycket våt (kraftigt regn)</option></select>
+        <div class="hint">Vatten på vägen ökar rullmotståndet, mer ju fortare det går. Mycket våt väg ger cirka 6 % högre körmotstånd vid 30 km/h och 11 % vid 120 km/h (mätningar med Volvo EX90, Chalmers 2025).</div></div>
     </div>
     <div class="sec">
       <h2>Laddning</h2>
@@ -451,11 +453,17 @@ const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 // Kraftbalans: lutningen läggs till luft- och rullmotståndet. Är summan positiv drar motorn (÷ η); är den
 // negativ regenererar bilen med verkningsgraden set.regen. Kalibrerat mot verklig körning (TeslaMate):
 // nedför minskar lutningen först dragkraftsbehovet fullt ut, och först när bilen bromsar går energi förlorad.
-function consumption(car,set,v,T,wind,grade){
+// våt vägbana: rullmotståndet ökar med vattenfilmen och farten. Anpassat till mätningar på mycket våt väg
+// (Olzon & Sarnacki, Chalmers 2025, Volvo EX90): totalt +6 % vid 30 km/h och +11 % vid 120 km/h. wet = 0 (torr) … 1 (mycket våt)
+const WETV={dry:0,damp:0.3,wet:0.6,vwet:1};
+const wetCrr=(wet,v)=>{ const vs=v/3.6; return 1+wet*(0.0072*vs+0.0000892*vs*vs); };
+// nederbörd (mm per timme, och summa de tre senaste timmarna) till vattenfilm
+const wetOf=(p,p3)=>p>=2?1:p>=0.5?0.6:p>=0.1?0.3:(p3>=0.3?0.3:0);
+function consumption(car,set,v,T,wind,grade,wet){
   const rho=101325/(287.05*(273.15+T));
   const va=v/3.6+(wind===undefined?set.wind:wind);
   const Fa=0.5*rho*car.cda*va*Math.abs(va);
-  const crr=car.crr*(set.winter?K.winter:1)*(1+K.crrPerC*Math.max(0,20-T));
+  const crr=car.crr*(set.winter?K.winter:1)*(1+K.crrPerC*Math.max(0,20-T))*(wet?wetCrr(wet,v):1);
   const m=car.kg+set.load;
   const Fr=crr*m*9.81, Fg=grade?m*9.81*clamp(grade,-0.15,0.15):0, F=Fa+Fr+Fg;
   const trac=F>=0?F/36/car.eta:F/36*(set.regen??0.75);
@@ -753,7 +761,8 @@ function plan(car,R,cands,set,extra){
   const n=R.X.length, km=R.km;
   const at=(arr,k,t)=>arr[k]+t*((arr[k+1]??arr[k])-arr[k]);
   const U=new Float64Array(n), Tm=new Float64Array(n), E=new Float64Array(n); // SOC % used, drive minutes, kWh from battery
-  const Ts=new Float64Array(n), Ws=new Float64Array(n); let miss=0, segs=0;
+  const Ts=new Float64Array(n), Ws=new Float64Array(n), Wt=new Float64Array(n); let miss=0, segs=0;
+  const wet0=WETV[set.road]??0;   // manuellt val, eller torr när prognosen saknas
   const tempAt=x=>set.t0+(set.t1-set.t0)*(km>0?x/km:0);
   { const T0=set.wx?((wxAt(set.wx,R.X[0],R.Y[0],set.depAbs)||{}).T??set.t0):set.t0; E[0]=startKwh(car,T0); U[0]=E[0]/(car.b*battFactor(T0))*100; } // kallstart
   const before=x=>{ let a=0; if(extra) for(const [k0,mn] of extra) if(k0<x) a+=mn; return a; };
@@ -761,13 +770,13 @@ function plan(car,R,cands,set,extra){
     const len=R.L[k-1], vlim=R.V[k-1];
     let v=vlim*set.sppct/100; if(set.spmode==='cap') v=Math.min(v,set.spmax); v=Math.max(30,v);
     const xm=(R.cum[k-1]+R.cum[k])/2;
-    let T=tempAt(xm), wind=set.wind;
+    let T=tempAt(xm), wind=set.wind, wet=wet0;
     if(set.wx&&len>0){ segs++;
       const w=wxAt(set.wx,(R.X[k-1]+R.X[k])/2,(R.Y[k-1]+R.Y[k])/2,set.depAbs+Tm[k-1]+before(xm));
-      if(w){ const dx=R.X[k]-R.X[k-1], dy=R.Y[k]-R.Y[k-1], dl=Math.hypot(dx,dy)||1; T=w.T; wind=-(w.u*dx+w.v*dy)/dl*set.wxfac; } else miss++; }
-    Ts[k]=T; Ws[k]=wind;
+      if(w){ const dx=R.X[k]-R.X[k-1], dy=R.Y[k]-R.Y[k-1], dl=Math.hypot(dx,dy)||1; T=w.T; wind=-(w.u*dx+w.v*dy)/dl*set.wxfac; if(set.road==='fc'&&w.p!=null) wet=wetOf(w.p,w.p3); } else miss++; }
+    Ts[k]=T; Ws[k]=wind; Wt[k]=wet;
     const dh=R.Z[k]-R.Z[k-1], gr=len>0?dh/(len*1000):0;
-    const e=len*consumption(car,set,v,T,wind,gr)/100;
+    const e=len*consumption(car,set,v,T,wind,gr,wet)/100;
     E[k]=E[k-1]+e; U[k]=U[k-1]+e/(car.b*battFactor(T))*100; Tm[k]=Tm[k-1]+len/v*60;
   }
   const nodes=[{kind:'start',km:0,u:0,tm:0,det:0,dt:0}];
@@ -802,7 +811,7 @@ function plan(car,R,cands,set,extra){
     // diagnose: longest gap
     let worst=null;
     for(let j=1;j<M;j++){ let ok=false; for(let i=0;i<j;i++){ if(i===0? set.s0-use(0,j)>=(j===M-1?set.sf:set.res) : ((j===M-1?set.sf:set.res)+use(i,j)<=set.maxsoc)){ok=true;break;} } if(!ok){worst=j;break;} }
-    return {ok:false,use:E[n-1],avg:E[n-1]/km*100,worst:worst!=null?nodes[worst]:null,prev:worst!=null&&worst>0?nodes[worst-1]:null,E,U,Tm,Ts,Ws,nodes,wxMiss:segs?miss/segs:0};
+    return {ok:false,use:E[n-1],avg:E[n-1]/km*100,worst:worst!=null?nodes[worst]:null,prev:worst!=null&&worst>0?nodes[worst-1]:null,E,U,Tm,Ts,Ws,Wt,nodes,wxMiss:segs?miss/segs:0};
   }
   const chain=[]; let j=M-1; while(j>0){ const i=pred[j]; if(info[j]) chain.push(Object.assign({node:nodes[i],idx:i},info[j])); j=i; }
   chain.reverse();
@@ -811,7 +820,7 @@ function plan(car,R,cands,set,extra){
   const total=drive+charge+spill+det;
   const finalSoc= chain.length? set.sf : set.s0-use(0,M-1);
   const useKwh=E[n-1]+chain.reduce((a,s)=>a+2*(s.node.detKwh||0),0);
-  return {ok:true,stops:chain,drive,charge,spill,det,total,kwh,kr,finalSoc,E,U,Tm,Ts,Ws,nodes,use:useKwh,avg:useKwh/km*100,wxMiss:segs?miss/segs:0};
+  return {ok:true,stops:chain,drive,charge,spill,det,total,kwh,kr,finalSoc,E,U,Tm,Ts,Ws,Wt,nodes,use:useKwh,avg:useKwh/km*100,wxMiss:segs?miss/segs:0};
 }
 
 function opAllowed(set,op){ const v=set.opPref[opKey(op)]; if(v==='avoid') return false; if(set.prefmode==='only'&&set.anyPref&&v!=='pref') return false; return true; }
@@ -835,11 +844,13 @@ function wxAt(wx,x,y,absMin){ // nearest forecast point within 60 km, linear in 
   let best=null,bd=Infinity; for(const p of wx.pts){ const d=Math.hypot(p.x-x,p.y-y); if(d<bd){bd=d;best=p;} }
   if(!best||bd>60) return null;
   const t=best.t; if(absMin<t[0]-720||absMin>t[t.length-1]+720) return null;
-  if(absMin<=t[0]) return {T:best.T[0],u:best.u[0],v:best.v[0]};
-  if(absMin>=t[t.length-1]){ const j=t.length-1; return {T:best.T[j],u:best.u[j],v:best.v[j]}; }
+  const pp=j=>best.pr?{p:best.pr[j],p3:best.p3[j]}:{};
+  if(absMin<=t[0]) return {T:best.T[0],u:best.u[0],v:best.v[0],...pp(0)};
+  if(absMin>=t[t.length-1]){ const j=t.length-1; return {T:best.T[j],u:best.u[j],v:best.v[j],...pp(j)}; }
   let i=Math.min(t.length-2,Math.max(0,Math.floor((absMin-t[0])/60))); while(i>0&&t[i]>absMin)i--; while(i<t.length-2&&t[i+1]<absMin)i++;
   const f=(absMin-t[i])/((t[i+1]-t[i])||1);
-  return {T:best.T[i]+f*(best.T[i+1]-best.T[i]), u:best.u[i]+f*(best.u[i+1]-best.u[i]), v:best.v[i]+f*(best.v[i+1]-best.v[i])};
+  // nederbörd: timmen som pågår (Open-Meteo anger summan för timmen som slutar vid tidpunkten)
+  return {T:best.T[i]+f*(best.T[i+1]-best.T[i]), u:best.u[i]+f*(best.u[i+1]-best.u[i]), v:best.v[i]+f*(best.v[i+1]-best.v[i]),...pp(i+1)};
 }
 function wxPoints(){ const R=route, pts=[], step=Math.max(30,R.km/28); let next=0;
   for(let k=0;k<R.X.length;k++){ if(R.cum[k]>=next||k===R.X.length-1){ pts.push([R.X[k],R.Y[k]]); next=R.cum[k]+step; } }
@@ -899,7 +910,7 @@ async function fetchOpenMeteo(mcp){
 function openMeteoUrl(ll){
   const d0=$('#depdate').value; const dd=new Date(d0+'T12:00:00Z'); const d1=new Date(dd.getTime()+2*864e5).toISOString().slice(0,10);
   return 'https://api.open-meteo.com/v1/forecast?latitude='+ll.map(q=>q[0].toFixed(3)).join(',')+'&longitude='+ll.map(q=>q[1].toFixed(3)).join(',')+
-    '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms&timezone=Europe%2FStockholm&start_date='+d0+'&end_date='+d1;
+    '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation&wind_speed_unit=ms&timezone=Europe%2FStockholm&start_date='+d0+'&end_date='+d1;
 }
 /* Webbplatsen: Open-Meteo direkt från webbläsaren (gratis, ingen nyckel) */
 async function fetchOpenMeteoDirect(){
@@ -913,7 +924,8 @@ async function fetchOpenMeteoDirect(){
 function parseOpenMeteo(body,pts){
     const P=body.map((o,i)=>{ const h=o.hourly; const t=h.time.map(s=>{ const [d,tm]=s.split('T'); return absMinutes(d,tm); });
       const dir=h.wind_direction_10m, sp=h.wind_speed_10m; // direction the wind blows from
-      return {x:pts[i][0],y:pts[i][1],t,T:h.temperature_2m.map(v=>v??0),u:sp.map((w,k)=>-(w??0)*Math.sin((dir[k]??0)*Math.PI/180)),v:sp.map((w,k)=>-(w??0)*Math.cos((dir[k]??0)*Math.PI/180)),spd:sp}; });
+      const pr=(h.precipitation||[]).map(v=>v??0), p3=pr.map((_,k)=>pr.slice(Math.max(0,k-2),k+1).reduce((a,b)=>a+b,0));
+      return {x:pts[i][0],y:pts[i][1],t,T:h.temperature_2m.map(v=>v??0),u:sp.map((w,k)=>-(w??0)*Math.sin((dir[k]??0)*Math.PI/180)),v:sp.map((w,k)=>-(w??0)*Math.cos((dir[k]??0)*Math.PI/180)),spd:sp,...(h.precipitation?{pr,p3}:{})}; });
     return P;
 }
 async function fetchWx(){
@@ -963,7 +975,7 @@ const findPlace=name=>PL.findIndex(p=>p[0]===name);
 const state={from:PL.findIndex(p=>p[9]===1), to:PL.findIndex(p=>p[9]===2), vias:[], car:2, opt:'tid', rmode:'fast'};
 const prices=Object.assign({},PRICE0);
 const opPref={}; OPS.forEach(o=>opPref[o]='ok');
-const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','kempa','unka','wind','wxfac','regen','cabin','loss'];
+const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','kempa','unka','road','wind','wxfac','regen','cabin','loss'];
 const checks=['winter','precond'];
 const LS='laddresan.v1';
 (function(){ const d=new Date(); const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); $('#depdate').value=iso; })();
@@ -979,7 +991,7 @@ function settings(){
   $('#sppctv').textContent=clamp(num('sppct')||100,100,125)+' %';
   const s0=clamp(num('s0')||100,1,100), sf=clamp(num('sf')||0,0,90), res=clamp(num('res')||0,0,90), maxsoc=clamp(num('maxsoc')||100,10,100);
   return {s0,sf,res,maxsoc,t0:num('t0')||0,t1:isNaN(num('t1'))?0:num('t1'),spmode:$('#spmode').value,sppct:clamp(num('sppct')||100,100,125),spmax:num('spmax')||110,
-    dep:$('#dep').value||'08:00',load:num('load')||0,winter:$('#winter').checked,minkw:+$('#minkw').value,corr:+$('#corr').value,spill:num('spill')||0,kempa:+$('#kempa').value||400,unka:+$('#unka').value||500,
+    dep:$('#dep').value||'08:00',load:num('load')||0,winter:$('#winter').checked,minkw:+$('#minkw').value,road:$('#road').value,corr:+$('#corr').value,spill:num('spill')||0,kempa:+$('#kempa').value||400,unka:+$('#unka').value||500,
     precond:$('#precond').checked,opPref,prefmode:$('#prefmode').value,anyPref:OPS.some(o=>opPref[o]==='pref'),wind:num('wind')||0,regen:clamp(isNaN(num('regen'))?0.75:num('regen'),0.3,0.95),cabin:isNaN(num('cabin'))?21:num('cabin'),
     loss:clamp((num('loss')||0)/100,0,0.5),prices,opt:state.opt,
     wx:($('#wxmode').value==='fc'&&WX)?WX:null, depAbs:absMinutes($('#depdate').value,$('#dep').value||'08:00'), wxfac:clamp(isNaN(num('wxfac'))?0.7:num('wxfac'),0,1)};
@@ -1331,12 +1343,13 @@ function gmapsLinks(){
   gmapsLinks.nsh=nsh; return out;
 }
 function legWx(k0,k1){
-  const R=route, r=result.res; let L=0,T=0,W=0,Tmin=Infinity,Tmax=-Infinity;
-  for(let k=1;k<R.X.length;k++){ const xm=(R.cum[k-1]+R.cum[k])/2; if(xm<k0||xm>k1) continue; const l=R.L[k-1]; L+=l; T+=r.Ts[k]*l; W+=r.Ws[k]*l; Tmin=Math.min(Tmin,r.Ts[k]); Tmax=Math.max(Tmax,r.Ts[k]); }
+  const R=route, r=result.res; let L=0,T=0,W=0,Tmin=Infinity,Tmax=-Infinity,Lw=0,Wm=0;
+  for(let k=1;k<R.X.length;k++){ const xm=(R.cum[k-1]+R.cum[k])/2; if(xm<k0||xm>k1) continue; const l=R.L[k-1]; L+=l; T+=r.Ts[k]*l; W+=r.Ws[k]*l; Tmin=Math.min(Tmin,r.Ts[k]); Tmax=Math.max(Tmax,r.Ts[k]); if(r.Wt&&r.Wt[k]>0){ Lw+=l; Wm=Math.max(Wm,r.Wt[k]); } }
   if(L<=0) return ''; T/=L; W/=L;
+  const wetTxt=Lw>0.5?` · ${Wm>=1?'mycket våt':Wm>=0.6?'våt':'fuktig'} väg${Lw<L*0.9?' '+nf0.format(Lw)+' km':''}`:'';
   const tt=Math.round(Tmax)-Math.round(Tmin)>=2?`${nf0.format(Tmin)} till ${nf0.format(Tmax)} °C`:`${nf0.format(T)} °C`;
   const ww=Math.abs(W)<0.3?'ingen vind av betydelse':(W>0?'motvind ':'medvind ')+nf1.format(Math.abs(W))+' m/s';
-  return ` · ${tt} · ${ww}`;
+  return ` · ${tt} · ${ww}${wetTxt}`;
 }
 function altText(s){
   const alts=result.cands.filter(c=>c.ci!==s.node.c.ci&&Math.abs(c.km-s.node.km)<=25).sort((a,b)=>b.ch[2]-a.ch[2]||Math.abs(a.km-s.node.km)-Math.abs(b.km-s.node.km)).slice(0,3);
@@ -1421,7 +1434,7 @@ function renderNotes(){
   <p><b>Förbrukning.</b> Samma fysik som fliken Förbrukning i räckviddsmodellen: luftmotstånd med temperaturberoende luftdensitet, rullmotstånd som ökar i kyla, värmepump med fallande COP, baslast och påslag för körprofil. Hastigheten är skyltad hastighet per vägavsnitt multiplicerad med reglaget (100–125 %). Lutningen räknas som en kraft för varje kilometer: uppför ökar den dragkraften, nedför minskar den, och först när bilen behöver bromsa regenereras energi med vald verkningsgrad (75 %). Vid avresan läggs en kallstart till, 0,17 kWh vid 20 °C och 0,008 kWh mer per grad kallare. Både lutning och kallstart är kalibrerade mot verklig körning med två Teslor (TeslaMate, drygt 15 000 km).${CARS[state.car].own?` För ${esc(CARS[state.car].name)} är luft- och rullmotstånd anpassade till uppmätt förbrukning på plan väg vid 75–135 km/h och minst 15 °C (medianer per 10 km/h, effektvärdet uppräknat 7 % till mätarens nivå).`:''}${CARS[state.car].extra&&!CARS[state.car].own?` För ${esc(CARS[state.car].name)} är luftmotstånd och rullmotstånd anpassade så att modellen ger bilens normaliserade förbrukning vid 90 och 120 km/h (uppmätt vid räckviddstester, omräknat till 20 °C, torr väg, genomsnittligt sommardäck och standardfälg). Kyla, vinterdäck, vind, last och höjd räknas sedan med samma fysik som för övriga bilar.`:''}</p>
   <p><b>Laddning.</b> Bilens laddkurva i 1 %-steg${CARS[state.car].extra?' (uppmätt kurva i kW per procent; efter sista mätpunkten antas effekten avta linjärt)':''}, begränsad av laddarens effekt och av temperaturfaktorn (fliken Laddning). Temperaturen antas ändras linjärt från start till mål. Vid varje stopp laddas precis så mycket som behövs för att nå nästa stopp med vald reserv, eller målet med vald marginal.</p>
   <p><b>Val av laddstopp.</b> Alla snabbladdare inom valt avstånd från vägen prövas (${cands.length} st på den här rutten). Dynamisk programmering väljer den kombination som ger kortast restid, lägst kostnad eller färst stopp. Avstickaren till laddaren räknas fram och tillbaka med 1,3 × fågelvägen i 50 km/h.</p>
-  <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). ${SITE?'Prognosen kommer från Open-Meteo, timvärden för avresedagen och två dygn framåt.':'Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.'}</p>
+  <p><b>Väder.</b> Med Väderprognos längs rutten hämtas temperatur och vind (10 m höjd) för orter och punkter längs rutten. Varje delsträcka får temperatur och vind för den tid bilen beräknas passera, laddstoppen inräknade. Vindens komponent längs färdriktningen räknas som mot- eller medvind och skalas ned till bilens höjd (faktor under Fler antaganden). ${SITE?'Prognosens nederbörd ger vägbanan: fuktig vid 0,1–0,5 mm per timme eller om det har regnat de senaste timmarna, våt vid 0,5–2 mm och mycket våt vid mer än 2 mm. ':''}Vatten på vägen ökar rullmotståndet mer ju fortare det går: mycket våt väg ger cirka 6 % högre körmotstånd vid 30 km/h och 11 % vid 120 km/h, enligt mätningar med Volvo EX90 på Hällered (Olzon och Sarnacki, Chalmers 2025). ${SITE?'Prognosen kommer från Open-Meteo, timvärden för avresedagen och två dygn framåt.':'Prognosen hämtas i första hand via kopplingen AccuWeather® (timvärden 12 timmar framåt, därefter dag- och nattvärden i upp till 10 dygn) och fungerar då både på webben och i appen för den som har lagt till kopplingen. Saknas den används Open-Meteo via webbläsaren i Claude-appen.'}</p>
   <p><b>Operatörer.</b> Operatörer markerade Undvik används aldrig. Ett stopp hos en operatör som inte är föredragen räknas som 5, 15 eller 45 minuter längre beroende på valet (vid Lägst kostnad 5 kr per minut), så planeraren väljer en föredragen operatör när skillnaden är mindre än så. Med Ladda bara hos föredragna används inga andra.</p>
   <p><b>Data.</b> ${SITE?'Rutten hämtas från ruttmotorn OSRM med OpenStreetMaps fullständiga vägnät (© OpenStreetMap-bidragsgivare). Laddresans eget vägnät, '+META.roadkm+' km huvudvägar, används för att välja vägtyp i lägena Kortaste och Lägst förbrukning och som reserv om ruttmotorn inte svarar.':'Vägnätet bygger på OpenStreetMap via OSRM ('+META.roadkm+' km huvudvägar).'} Ortlistan har ${META.places} orter. Höjddata kommer från AWS Terrain Tiles (bland annat EU-DEM och SRTM). ${META.nobil?'Laddplatserna kommer från NOBIL, Sveriges officiella register över laddplatser (Energimyndigheten, CC BY 3.0, hämtad '+META.nobil+'), Teslas från supercharge.info (hämtad '+META.tesla+') och några som bara finns i Open Charge Map. Spänning och ström kommer också från NOBIL, med verkliga värden för '+META.nva+' platser.':'Laddplatserna kommer från Open Charge Map (export '+META.ocm+') och supercharge.info (Tesla, hämtad '+META.tesla+').'} Det är ${META.nch} platser med minst 150 kW. Kontrollera alltid status och pris i operatörens app före avresa.</p>
   <p><b>Begränsningar.</b> Ingen hänsyn tas till trafik, köer vid laddaren, vägarbeten eller färjor. Ort väljs från en lista över ${META.places} svenska orter med minst 1 000 invånare${SITE?' och de platser du själv sparar under Mina platser':' och sparade adresser'}. Restiden bygger på vald andel av skyltad hastighet utan stopp för mat.</p>`;
