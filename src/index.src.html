@@ -11,6 +11,7 @@
   --charge:#d99400; --charge-ink:#1d1400;
   --land:#e2e8df; --land-other:#eceee9; --water:#c6dbe6; --road:#a9b5af; --road-hi:#7d8b85;
   --ok:#2c7a4c; --warn:#a96400; --bad:#b3261e;
+  --lim-car:#0a5ea6; --lim-cold:#6b46b0; --lim-amp:#c27f00; --lim-kw:#14827f; --lim-v:#b0306f;
   --font-display:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
   --font-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --r:10px;
@@ -20,13 +21,15 @@
   --sign:#2f7fc8; --sign-deep:#1d5f9e; --sign-ink:#ffffff;
   --charge:#f0b02a; --charge-ink:#1d1400;
   --land:#1b292e; --land-other:#141f23; --water:#0c2332; --road:#3e525a; --road-hi:#5f7880;
-  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61; color-scheme:dark}}
+  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61;
+  --lim-car:#5aa2e6; --lim-cold:#a98ae0; --lim-amp:#f0b02a; --lim-kw:#43c2bd; --lim-v:#e573ab; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e1518; --surface:#152025; --surface-2:#1a272d; --ink:#e3ebe7; --muted:#93a39e; --line:#2a3a41;
   --sign:#2f7fc8; --sign-deep:#1d5f9e; --sign-ink:#ffffff;
   --charge:#f0b02a; --charge-ink:#1d1400;
   --land:#1b292e; --land-other:#141f23; --water:#0c2332; --road:#3e525a; --road-hi:#5f7880;
-  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61; color-scheme:dark}
+  --ok:#5cbf88; --warn:#e3a24c; --bad:#ef6b61;
+  --lim-car:#5aa2e6; --lim-cold:#a98ae0; --lim-amp:#f0b02a; --lim-kw:#43c2bd; --lim-v:#e573ab; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{background:var(--bg);color:var(--ink)}
@@ -157,6 +160,18 @@ details.more .inner{padding:0 16px 14px}
 .tl .meta{font-size:13px;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .chip{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface-2);white-space:nowrap}
+.ccurve{margin-top:8px}
+.ccurve summary{cursor:pointer;color:var(--sign);font-size:13px;font-weight:600;list-style:none;display:inline-flex;align-items:center;gap:6px}
+.ccurve summary::-webkit-details-marker{display:none}
+.ccurve summary::before{content:'▸';font-size:11px}
+.ccurve[open] summary::before{content:'▾'}
+.ccurve svg{display:block;width:100%;max-width:620px;height:auto;margin-top:6px}
+.ccurve svg text{font-family:var(--font-body);fill:var(--muted)}
+.phases{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:5px;max-width:620px}
+.phases li{display:grid;grid-template-columns:12px 1fr;gap:8px;font-size:13px;line-height:1.35}
+.phases .sw{width:12px;height:12px;border-radius:3px;margin-top:3px}
+.phases b{font-weight:600}
+.phases .why{color:var(--muted)}
 .chip.lim{border-color:color-mix(in srgb,var(--warn,#b45309) 55%,var(--line))}
 .chip.soc{border-color:transparent;background:color-mix(in srgb,var(--charge) 22%,var(--surface))}
 .leg{font-size:12.5px;color:var(--muted);padding:0 0 10px}
@@ -474,9 +489,12 @@ function chargerKw(car,nd,s){
 }
 function chargeTable(car,nd,G){ // cumulative minutes from 0 % in 1 % steps (Ruttberäkning rows 168–268)
   const P=car._P||(car._P=carPower(car)); const t=new Float64Array(101), pw=new Float64Array(101), lim=new Uint8Array(101);
-  for(let s=0;s<=100;s++){ const pc=chargerKw(car,nd,s), pb=P[s]*G; pw[s]=Math.min(pb,pc); lim[s]=pc<pb-0.5?1:0; }
+  const why=new Uint8Array(101), pch=new Float64Array(101); // 0 bilens kurva, 1 kallt batteri, 2 laddarens ström, 3 laddarens maxeffekt, 4 spänning/omvandlare
+  for(let s=0;s<=100;s++){ const pc=chargerKw(car,nd,s), pb=P[s]*G; pw[s]=Math.min(pb,pc); lim[s]=pc<pb-0.5?1:0; pch[s]=pc;
+    if(!lim[s]) why[s]=G<0.9&&Math.min(P[s],pc)>pb+0.5?1:0;   // kallt batteri bara när kylan är det som främst håller nere
+    else { const U=packV(car,s); why[s]=U>nd.V?(pc<nd.kw-0.5?4:3):(nd.A*U/1000<nd.kw-0.5?2:3); } }
   for(let s=1;s<=100;s++) t[s]=t[s-1]+(car.b/100)/((pw[s-1]+pw[s])/2)*60;
-  t.pw=pw; t.lim=lim; return t;
+  t.pw=pw; t.lim=lim; t.why=why; t.pch=pch; t.P=P; return t;
 }
 // högsta effekt och om laddaren begränsar, mellan laddnivå a och b
 function chargePeak(tb,a,b){ let pk=0,lim=0; for(let s=Math.max(0,Math.floor(a));s<=Math.min(100,Math.ceil(b));s++){ if(tb.pw[s]>pk){pk=tb.pw[s];} if(tb.lim[s]) lim++; } return {pk,lim:lim>0}; }
@@ -1353,7 +1371,7 @@ function renderPlan(){
       const gm='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(c[6].toFixed(5)+','+c[7].toFixed(5));
       h+=`<li class="stop"><div class="t">${clock(set.dep,arrive)}</div><div class="dot"><span>${e.n}</span></div><div class="body"><div class="ttl">${esc(c[0])}</div>
         <div class="meta">${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag · km ${nf0.format(e.km)}${s.node.c.off>0.3?' · '+nf1.format(s.node.c.off)+' km från vägen':''} · <a class="small" href="${gm}" target="_blank" rel="noopener">Visa plats</a></div>
-        <div class="chips"><span class="chip soc">${nf0.format(s.a)} → ${nf0.format(s.need)} %</span>${result.set.anyPref&&opPref[opKey(c[1])]==='pref'?'<span class="chip pref">Föredragen</span>':''}<span class="chip">${nf0.format(s.tc)} min laddning</span>${peakChip(s,result.car)}<span class="chip">${nf1.format(s.kwh)} kWh</span><span class="chip">${nf0.format(s.kr)} kr</span><span class="chip">vidare ${clock(set.dep,arrive+s.tc+set.spill+s.node.dt)}</span></div>${altText(s)}</div></li>`;
+        <div class="chips"><span class="chip soc">${nf0.format(s.a)} → ${nf0.format(s.need)} %</span>${result.set.anyPref&&opPref[opKey(c[1])]==='pref'?'<span class="chip pref">Föredragen</span>':''}<span class="chip">${nf0.format(s.tc)} min laddning</span>${peakChip(s,result.car)}<span class="chip">${nf1.format(s.kwh)} kWh</span><span class="chip">${nf0.format(s.kr)} kr</span><span class="chip">vidare ${clock(set.dep,arrive+s.tc+set.spill+s.node.dt)}</span></div>${altText(s)}${curveBox(s,result.car,result.set)}</div></li>`;
       extra+=s.tstop; socDep=s.need; uDep=s.node.u; detDep=s.node.det; }
     else { const p=PL[pts[pts.length-1]];
       h+=`<li><div class="t">${clock(set.dep,tm)}</div><div class="dot"><span style="border-color:var(--ink)"></span></div><div class="body"><div class="ttl">${esc(shortName(p))}</div><div class="meta">Framme med ${nf0.format(res.finalSoc)} % · total restid ${hm(res.total)}</div></div></li>`; }
@@ -1462,6 +1480,48 @@ function peakChip(s,car){ if(!s.tb) return ''; const {pk,lim}=chargePeak(s.tb,s.
   const why=!lim?'':(car.v8&&packV(car,s.need)>nd.V?`, begränsas av bilens spänningsomvandlare (laddaren max ${nd.V} V)`:`, begränsas av laddaren (${nd.V} V/${nd.A} A, ${LSRC[nd.lsrc]})`);
   const who=car.v8&&packV(car,s.need)>nd.V?'bilens omvandlare begränsar':'laddaren begränsar';
   return `<span class="chip${lim?' lim':''}" title="Högsta laddeffekt under stoppet${why}">max ${nf0.format(pk)} kW${lim?' · '+who:''}</span>`; }
+/* Laddkurva per laddstopp: effekten genom sessionen, färgad efter vad som begränsar i varje fas */
+const LIMC=['var(--lim-car)','var(--lim-cold)','var(--lim-amp)','var(--lim-kw)','var(--lim-v)'];
+const LIMN=['Bilens laddkurva','Kallt batteri','Laddarens strömgräns','Laddarens maxeffekt','Spänningsomvandling'];
+function phasesOf(s){ const tb=s.tb, a=s.a, b=s.need, out=[];
+  for(let x=Math.floor(a);x<Math.ceil(b);x++){ const w=tb.why[x], last=out.at(-1);
+    if(last&&last.w===w) last.s1=x+1; else out.push({w,s0:Math.max(a,x),s1:x+1}); }
+  if(out.length){ out[0].s0=a; out.at(-1).s1=b; }
+  // korta faser (under 2 procentenheter) slås ihop med grannen, så att listan visar det som betyder något
+  for(let i=0;i<out.length&&out.length>1;){ const p=out[i]; if(p.s1-p.s0<2){ const j=i>0?i-1:i+1; out[j].s0=Math.min(out[j].s0,p.s0); out[j].s1=Math.max(out[j].s1,p.s1); out.splice(i,1); i=0; } else i++; }
+  for(let i=1;i<out.length;) if(out[i].w===out[i-1].w){ out[i-1].s1=out[i].s1; out.splice(i,1); } else i++;
+  return out.map(ph=>{ let lo=Infinity,hi=0; for(let x=Math.floor(ph.s0);x<=Math.ceil(ph.s1);x++){ lo=Math.min(lo,tb.pw[x]); hi=Math.max(hi,tb.pw[x]); }
+    return Object.assign(ph,{lo,hi,min:tAt(tb,ph.s1)-tAt(tb,ph.s0)}); }); }
+function phaseWhy(ph,s,car,set){ const nd=s.node, tb=s.tb, u0=packV(car,ph.s0), u1=packV(car,ph.s1), ch=nf0.format(Math.max(...[Math.floor(ph.s0),Math.ceil(ph.s1)].map(x=>tb.pch[x])));
+  switch(ph.w){
+    case 0: return `bilen tar inte emot mer här. Laddaren skulle kunna ge ca ${ch} kW.`+(nd.G<0.995?` Kurvan är sänkt till ${nf0.format(nd.G*100)} % av kyla (ca ${nf0.format(nd.T)} °C).`:'');
+    case 1: { const why=car.pre&&set.precond?'trots förkonditionering':car.pre?'förkonditionering är avstängd':'bilen saknar förkonditionering';
+      return `bilens laddkurva är sänkt till ${nf0.format(nd.G*100)} % eftersom batteriet är kallt (ca ${nf0.format(nd.T)} °C ute, ${why}).`; }
+    case 2: return `${nd.A} A × batteriets ${nf0.format(u0)}–${nf0.format(u1)} V (${LSRC[nd.lsrc]}). Strömmen räcker inte till bilens kurva, och effekten stiger med spänningen.`;
+    case 3: return `laddaren ger högst ${nd.kw} kW.`;
+    case 4: return nd.V*nd.A/1000<(car.boost||50)
+      ? `batteriet (ca ${nf0.format(u0)} V) har högre spänning än laddarens max ${nd.V} V, och laddaren ger högst ${nd.V} V × ${nd.A} A.`
+      : `batteriet (ca ${nf0.format(u0)} V) har högre spänning än laddarens max ${nd.V} V, så bilen laddar via sin omvandlare, ca ${car.boost} kW.`;
+  } return ''; }
+function curveBox(s,car,set){ if(!s.tb||!s.tb.why) return '';
+  const tb=s.tb, ph=phasesOf(s), W=600, H=190, L=44, R=26, T=14, B=30, pw=W-L-R, plh=H-T-B;
+  let ymax=0; for(let x=0;x<=100;x++) ymax=Math.max(ymax,tb.P[x],Math.min(tb.pch[x],tb.P[x]*1.6)); const step=ymax>300?100:50; ymax=Math.ceil(ymax*1.05/step)*step;
+  const X=v=>L+v/100*pw, Y=k=>T+plh-k/ymax*plh, f=v=>v.toFixed(1);
+  const line=(arr,a,b)=>{ let d=''; for(let x=a;x<=b;x++) d+=(x===a?'M':'L')+f(X(x))+' '+f(Y(arr[x])); return d; };
+  const at=(arr,v)=>{ const i=Math.min(99,Math.floor(v)); return arr[i]+(v-i)*(arr[i+1]-arr[i]); };
+  let g='';
+  for(let k=0;k<=ymax;k+=step) g+=`<line x1="${L}" x2="${W-R}" y1="${f(Y(k))}" y2="${f(Y(k))}" stroke="var(--line)"/><text x="${L-6}" y="${f(Y(k)+4)}" text-anchor="end" font-size="11">${k}</text>`;
+  for(let v=0;v<=100;v+=20) g+=`<text x="${f(X(v))}" y="${H-12}" text-anchor="middle" font-size="11">${v} %</text>`;
+  g+=`<text x="${L}" y="${T-3}" font-size="11">kW</text>`;
+  g+=`<path d="${line(tb.P,0,100)}" fill="none" stroke="var(--muted)" stroke-width="1.25" stroke-dasharray="4 3"/>`;
+  const pchC=tb.pch.map(v=>Math.min(v,ymax)); g+=`<path d="${line(pchC,0,100)}" fill="none" stroke="var(--charge)" stroke-width="1.25" stroke-dasharray="1.5 3"/>`;
+  for(const p of ph){ const a=p.s0,b=p.s1, xs=[a]; for(let x=Math.ceil(a);x<b;x++) xs.push(x); xs.push(b);
+    const pts=xs.map(v=>f(X(v))+' '+f(Y(at(tb.pw,v))));
+    g+=`<path d="M${f(X(a))} ${f(Y(0))}L${pts.join('L')}L${f(X(b))} ${f(Y(0))}Z" fill="${LIMC[p.w]}" fill-opacity=".14"/><path d="M${pts.join('L')}" fill="none" stroke="${LIMC[p.w]}" stroke-width="3" stroke-linejoin="round"/>`; }
+  for(const [v,lab] of [[s.a,'start'],[s.need,'slut']]) g+=`<line x1="${f(X(v))}" x2="${f(X(v))}" y1="${T}" y2="${f(Y(0))}" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/><text x="${f(X(v)+(lab==='start'?-4:4))}" y="${T+10}" text-anchor="${lab==='start'?'end':'start'}" font-size="11">${lab} ${nf0.format(v)} %</text>`;
+  const svgEl=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Laddeffekt mellan ${nf0.format(s.a)} och ${nf0.format(s.need)} % laddnivå">${g}</svg><div class="hint">Laddeffekt mot laddnivå. Tjock linje: effekten under stoppet, färgad efter vad som begränsar. Streckad grå: bilens laddkurva. Prickad gul: vad laddaren kan ge.</div>`;
+  const rows=ph.map(p=>`<li><span class="sw" style="background:${LIMC[p.w]}"></span><span><b>${nf0.format(p.s0)}–${nf0.format(p.s1)} %</b> · ${p.hi-p.lo<3?nf0.format(p.hi):nf0.format(p.lo)+'–'+nf0.format(p.hi)} kW · ${p.min<1?'under 1':nf0.format(p.min)} min · <b>${LIMN[p.w]}</b>: <span class="why">${phaseWhy(p,s,car,set)}</span></span></li>`).join('');
+  return `<details class="ccurve"><summary>Laddkurva och vad som begränsar</summary>${svgEl}<ul class="phases">${rows}</ul></details>`; }
 function clickMap(e){ const t=e.target.closest('[data-c]'); if(!t){ $('#pop').hidden=true; return; } const c=CH[+t.dataset.c]; const near=result?result.cands.find(x=>x.ci===+t.dataset.c):null;
   $('#pop').innerHTML=`<button class="x" type="button" aria-label="Stäng">×</button><b>${esc(c[0])}</b>${esc(c[1])} · ${c[2]} kW · ${c[3]} uttag${c[8]?' · '+esc(c[8]):''}<br>${near?'Km '+nf0.format(near.km)+' längs rutten, '+nf1.format(near.off)+' km från vägen':'Inte längs rutten'}<br>${(([V,A,src])=>`Max ${V} V och ${A} A per uttag (${LSRC[src]})`)(chLimits(c,settings()))}<br><span class="hint">Källa: ${esc(c[9])}${c[10]?', uppdaterad '+esc(c[10]):''}${c[11]?', spänning och ström från NOBIL':''}</span><br><a class="small" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${c[6].toFixed(5)},${c[7].toFixed(5)}">Öppna i Google Maps</a>`;
   $('#pop').hidden=false; $('#pop .x').addEventListener('click',()=>{$('#pop').hidden=true;}); }
