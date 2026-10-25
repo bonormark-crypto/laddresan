@@ -274,10 +274,10 @@ tr.clickable{cursor:pointer}
       <div class="field" id="manualwind"><label for="wind">Motvind (m/s, minus = medvind)</label><input type="number" id="wind" min="-15" max="15" step="1" value="0"></div>
       <div class="field" id="manualxwind"><label for="xwind">Sidvind (m/s)</label><input type="number" id="xwind" min="0" max="15" step="1" value="0"></div>
       <div class="field"><label for="spmode">Hastighet</label>
-        <select id="spmode"><option value="sign">Andel av skyltad hastighet</option><option value="cap">Skyltad, men högst</option></select></div>
+        <select id="spmode"><option value="sign">Andel av skyltad hastighet</option><option value="cap">Andel av skyltad, men högst</option></select></div>
       <div class="row2">
         <div class="field" style="grid-column:1/-1"><label for="sppct">Hastighet i % av skyltad: <b id="sppctv">100 %</b></label><input type="range" id="sppct" min="100" max="125" step="1" value="100" aria-describedby="sppcth"><div class="hint" id="sppcth">100 % = tillåten hastighet, 125 % = t.ex. 112 km/h på 90-väg och 150 km/h på 120-väg. Hela planen räknas om när du drar.</div></div>
-        <div class="field"><label for="spmax">Högst (km/h)</label><input type="number" id="spmax" min="50" max="130" step="5" value="110"></div>
+        <div class="field" id="spmaxf"><label for="spmax">Högst (km/h)</label><input type="number" id="spmax" min="50" max="130" step="5" value="110"><div class="hint">Gäller på alla vägar med högre skyltad hastighet, t.ex. 110 km/h på 120-väg.</div></div>
       </div>
       <div class="row2">
         <div class="field"><label for="load">Last (kg)</label><input type="number" id="load" min="0" max="800" step="10" value="120"></div>
@@ -980,6 +980,7 @@ const findPlace=name=>PL.findIndex(p=>p[0]===name);
 const state={from:PL.findIndex(p=>p[9]===1), to:PL.findIndex(p=>p[9]===2), vias:[], car:2, opt:'tid', rmode:'fast'};
 const prices=Object.assign({},PRICE0);
 const opPref={}; OPS.forEach(o=>opPref[o]='ok');
+const spUI=()=>{ $('#spmaxf').hidden=$('#spmode').value!=='cap'; };
 const fields=['s0','sf','res','maxsoc','t0','t1','spmode','sppct','spmax','dep','depdate','wxmode','load','minkw','corr','spill','kempa','unka','road','xwind','wind','wxfac','regen','cabin','loss'];
 const checks=['winter','precond'];
 const LS='laddresan.v1';
@@ -992,7 +993,7 @@ if(!(state.from>=-1&&state.from<PL.length)) state.from=-1; if(!(state.to>=-1&&st
 state.vias=(state.vias||[]).filter(v=>v>=0&&v<PL.length);
 function save(){ try{ const f={},c={}; fields.forEach(k=>f[k]=$('#'+k).value); checks.forEach(k=>c[k]=$('#'+k).checked); f.prefmode=$('#prefmode').value; localStorage.setItem(LS,JSON.stringify({state,prices,opPref,f,c})); }catch(e){} }
 function settings(){
-  const num=id=>parseFloat($('#'+id).value);
+  const num=id=>parseFloat($('#'+id).value); spUI();
   $('#sppctv').textContent=clamp(num('sppct')||100,100,125)+' %';
   const s0=clamp(num('s0')||100,1,100), sf=clamp(num('sf')||0,0,90), res=clamp(num('res')||0,0,90), maxsoc=clamp(num('maxsoc')||100,10,100);
   return {s0,sf,res,maxsoc,t0:num('t0')||0,t1:isNaN(num('t1'))?0:num('t1'),spmode:$('#spmode').value,sppct:clamp(num('sppct')||100,100,125),spmax:num('spmax')||110,
@@ -1163,6 +1164,7 @@ const opPainters=[];
 function prefSummary(){ const p=OPS.filter(o=>opPref[o]==='pref'), a=OPS.filter(o=>opPref[o]==='avoid');
   $('#prefsum').textContent=(p.length?'Föredrar: '+p.join(', '):'Inga föredragna operatörer valda')+(a.length?' · Undviker: '+a.join(', '):''); }
 fields.concat(checks).forEach(id=>$('#'+id).addEventListener('input',()=>changed(false)));
+$('#spmode').addEventListener('change',spUI); spUI();
 carInfo(); renderVias();
 $('#wxfetch').addEventListener('click',fetchWx);
 $('#wxmode').addEventListener('change',()=>{ renderWxStatus(); });
