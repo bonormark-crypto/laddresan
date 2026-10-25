@@ -104,9 +104,18 @@ if args.target == 'site':  # claude.ai lägger själv till dokumentramen; webbpl
            '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
            '<meta name="description" content="Ruttplanerare för elbil i Sverige: laddstopp vid snabbladdare från 150 kW, förbrukning med höjd, väder och vind.">\n'
            '<meta name="theme-color" content="#0a5ea6">\n'
-           f'<link rel="icon" href="{icon}">\n' + out + '\n</html>\n')
+           f'<link rel="icon" href="{icon}">\n'
+           '<link rel="manifest" href="manifest.webmanifest">\n<link rel="apple-touch-icon" href="apple-touch-icon.png">\n'
+           + out + '\n</html>\n')
 os.makedirs(os.path.dirname(out_path), exist_ok=True)
 open(out_path, 'w').write(out)
+if args.target == 'site':  # appfiler (installerbar app på telefonen): manifest, ikoner och service worker
+    import hashlib, shutil
+    build = hashlib.sha1(out.encode()).hexdigest()[:10]
+    for f in os.listdir(f'{S}/web'):
+        dst = os.path.join(os.path.dirname(out_path), f)
+        if f == 'sw.js': open(dst, 'w').write(open(f'{S}/web/sw.js').read().replace('__BUILD__', build))
+        else: shutil.copy(f'{S}/web/{f}', dst)
 print(f'{args.target}: {out_path} · {len(jn)} noder, {len(E)} kanter, {roadkm} km väg, {len(places) - nsaved} orter, '
       f'{nsaved} sparade, {len(C)} laddplatser, {round(len(out) / 1e6, 2)} MB')
 if far: print('utelämnade orter (långt från vägnätet):', far)

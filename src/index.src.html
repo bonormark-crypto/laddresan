@@ -160,6 +160,18 @@ details.more .inner{padding:0 16px 14px}
 .tl .meta{font-size:13px;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .chip{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface-2);white-space:nowrap}
+.installbtn{margin-left:auto;background:var(--sign-ink);color:var(--sign);border:0;border-radius:999px;padding:6px 12px;font:600 13px var(--font-body);cursor:pointer;white-space:nowrap}
+.installbtn+.signline{margin-left:12px}
+/* telefon: inställningar som sällan ändras fälls ihop, och en knapp hoppar till resultatet */
+@media (max-width:900px){
+  .panel .sec.fold>h2{cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin-bottom:0}
+  .panel .sec.fold>h2::after{content:'▸';font-size:13px;color:var(--muted)}
+  .panel .sec.fold.open>h2::after{content:'▾'}
+  .panel .sec.fold.open>h2{margin-bottom:12px}
+  .panel .sec.fold:not(.open)>*:not(h2){display:none!important}
+}
+.jump{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:50;background:var(--sign);color:var(--sign-ink);border:0;border-radius:999px;padding:11px 16px;font:600 14px var(--font-body);box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
+@media (min-width:901px){.jump{display:none!important}}
 .ccurve{margin-top:8px}
 .ccurve summary{cursor:pointer;color:var(--sign);font-size:13px;font-weight:600;list-style:none;display:inline-flex;align-items:center;gap:6px}
 .ccurve summary::-webkit-details-marker{display:none}
@@ -205,6 +217,7 @@ tr.clickable{cursor:pointer}
       <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect x="1.5" y="1.5" width="31" height="31" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M19 6 10 19h6l-2 9 9-13h-6z" fill="currentColor"/></svg>
       <div><h1>Laddresan</h1><div class="tag">Ruttplanerare för elbil i Sverige · snabbladdare från 150 kW</div></div>
     </div>
+    <button type="button" class="installbtn" id="installbtn" hidden>Installera som app</button>
     <div class="signline" id="signline" aria-live="polite"></div>
   </div>
 </header>
@@ -1553,6 +1566,21 @@ let cw=0; new ResizeObserver(()=>{ const w=$('#chart').clientWidth; if(result&&M
 let rw=0; new ResizeObserver(()=>{ const w=svg.getBoundingClientRect().width; if(Math.abs(w-rw)>2){ rw=w; if(vb) setVB(vb.x,vb.y,vb.w,vb.h); } }).observe(svg);
 
 compute();
+/* Telefon: fäll ihop inställningssektioner (utom Rutt och Bil) och visa en knapp till resultatet */
+{ const mq=matchMedia('(max-width:900px)'), secs=[...document.querySelectorAll('.panel .sec')].slice(2);
+  secs.forEach(sec=>{ const h=sec.querySelector('h2'); if(!h) return; sec.classList.add('fold'); h.setAttribute('role','button'); h.tabIndex=0;
+    const tog=()=>{ if(!mq.matches) return; sec.classList.toggle('open'); h.setAttribute('aria-expanded',sec.classList.contains('open')); };
+    h.addEventListener('click',tog); h.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); tog(); } }); });
+  const jb=document.createElement('button'); jb.type='button'; jb.className='jump'; jb.hidden=true; document.body.appendChild(jb);
+  jb.addEventListener('click',()=>$('#tiles').scrollIntoView({behavior:'smooth',block:'start'}));
+  const upd=()=>{ const t=$('#tiles'), r=t.getBoundingClientRect(); const has=result&&result.res&&result.res.ok;
+    jb.hidden=!mq.matches||!has||r.top<innerHeight*0.6; if(has) jb.textContent='Resultat: '+hm(result.res.total)+' ↓'; };
+  addEventListener('scroll',upd,{passive:true}); addEventListener('resize',upd); setInterval(upd,1000); }
+/* Installerbar app (webbplatsen): service worker för start utan nät, och en knapp när webbläsaren erbjuder installation */
+if(SITE&&'serviceWorker' in navigator&&location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
+  let deferred=null; window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferred=e; $('#installbtn').hidden=false; });
+  $('#installbtn').addEventListener('click',async()=>{ if(!deferred) return; deferred.prompt(); try{ await deferred.userChoice; }catch(e){} deferred=null; $('#installbtn').hidden=true; });
+  window.addEventListener('appinstalled',()=>{ $('#installbtn').hidden=true; }); }
 window.__laddresan={consumption,chargeTable,chargerKw,chLimits,packV,tAt,CARS,settings,state,get result(){return result;},get route(){return route;},changed,sweref2wgs,setWX(w){WX=w;},wxPoints,absMinutes,shapeCtx,shapeRange,gmapsLinks};
 })();
 </script>
