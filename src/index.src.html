@@ -408,10 +408,14 @@ function pushFav(f,i){ const [x,y]=wgs2sweref(f.lat,f.lon), s=snapGraph(x,y); PL
 FAVS.forEach(pushFav);
 
 /* ---------- Model data from Rackviddsmodell_elbilar_ny3.xlsx (Indata, Laddning) ---------- */
+// laddkurva (kW per % laddnivå, 0–100) ur punkter, rak linje mellan dem
+const kwPts=pts=>Array.from({length:101},(_,x)=>{ let i=0; while(i<pts.length-2&&x>pts[i+1][0]) i++; const [s0,k0]=pts[i],[s1,k1]=pts[i+1]; return x<=s0?k0:x>=s1?k1:k0+(x-s0)/(s1-s0)*(k1-k0); });
 const CARS=[
  {name:'Volvo EX60 P6 RWD',b:80,dc:320,kg:2114,cda:0.676,wltp:620,eta:0.94,crr:0.01,prof:1,pre:true},
  {name:'Volvo EX60 P10 AWD',b:91,dc:370,kg:2275,cda:0.676,wltp:660,eta:0.94,crr:0.01,prof:1,pre:true},
- {name:'Volvo EX60 P12 AWD',b:112,dc:370,kg:2330,cda:0.676,wltp:810,eta:0.94,crr:0.01,prof:1,pre:true},
+ {name:'Volvo EX60 P12 AWD',b:112,dc:370,kg:2330,cda:0.676,wltp:810,eta:0.94,crr:0.01,prof:1,pre:true,
+  // uppmätt i biltest oktober 2026 (förvärmt, 400 kW-laddare), avläst 10–80 %; under 10 % och över 80 % uppskattat
+  kw:kwPts([[0,330],[5,350],[10,360],[15,365],[20,370],[25,369],[30,360],[35,352],[40,362],[45,362],[50,357],[55,325],[60,260],[65,140],[70,158],[75,152],[80,146],[90,105],[100,45]])},
  {name:'Volvo EX40 Twin Motor Performance 2025',b:79,dc:200,kg:2095,cda:0.84,wltp:539,eta:0.89,crr:0.0102,prof:6,pre:true},
  {name:'Jaguar I-PACE EV400 2019',b:84.7,dc:104,kg:2133,cda:0.73,wltp:470,eta:0.84,crr:0.011,prof:2,pre:false},
  {name:'Tesla Model Y Premium AWD 2026',b:79,dc:250,kg:1997,cda:0.58,wltp:629,eta:0.90,crr:0.0095,prof:3,pre:true},
@@ -426,7 +430,7 @@ const NOWN=CARS.length;
 J('d-cars').forEach(c=>CARS.push(Object.assign({extra:true,wltp:null},c)));
 /* Batterispänning och spänningsomvandlare. 800 V-bilar på en laddare med lägre maxspänning (t.ex. Tesla V3,
    ca 470–500 V) laddar via bilens egen omvandlare, vars tak (kW) är ungefärligt och bygger på användarrapporter. */
-const V800=[[/EX60/,135],[/iX3 50/,200],[/Ioniq [569]|EV6|EV9/,110],[/Taycan|e-tron GT/,150],[/Q6 e-tron|SQ6|A6 (Avant )?e-tron|S6 e-tron/,135],
+const V800=[[/EX60/,135],[/iX3 50/,200],[/Ioniq [569]|EV6|EV9/,110],[/Taycan|e-tron GT/,150],[/Q6 e-tron|SQ6|A6 (Avant )?e-tron|S6 e-tron|Macan/,135],
   [/Cybertruck/,200],[/Lotus Eletre|Xpeng (G6|G9|X9|P7\+)|Zeekr 7X|Zeekr 7GT|Mercedes CLA|MG IM[56]/,100]];
 const LFP=/LFP|BYD|Model 3 (RWD|Standard)|Model Y (RWD|Standard)|MG4 51|e-C3|Dolphin/;
 CARS.forEach(c=>{ const v=V800.find(([re])=>re.test(c.name));

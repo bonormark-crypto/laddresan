@@ -103,3 +103,25 @@ M = {
  'BMW i3 42 kWh':('BMW i3 42 kWh',''), 'BMW i3s 120 Ah':('BMW i3 42 kWh',''), 'Nissan Townstar':('Nissan Townstar 45 kWh',''),
  'Hyundai Ioniq 28 kWh':('Hyundai Ioniq 28 kWh',''), 'Kia Soul 30 kWh':('Kia Soul 30 kWh',''), 'BMW i5 M60':('BMW i5 M60 84 kWh',''),
 }
+
+# Laddkurvor som inte finns i Charging_curves.xlsx: avlästa ur biltest (kW per % laddnivå, förvärmt batteri,
+# 400 kW-laddare). Avläsningen ur diagram ger cirka ±10 kW.
+EXTRA_CURVES = {
+    'Porsche Macan 4 (biltest 2026, avläst)': [(10, 203), (15, 258), (20, 280), (25, 285), (30, 270), (35, 197), (40, 203), (45, 185),
+                                               (50, 190), (55, 185), (60, 172), (65, 165), (70, 155), (75, 140), (80, 120)],
+}
+M['Porsche Macan 4'] = ('Porsche Macan 4 (biltest 2026, avläst)', 'avläst ur biltest, 10–80 %')
+
+# Rättelser efter kontroll mot biltest i oktober 2026
+FIXES = {
+    # användbar kapacitet enligt ev-database.org (94 kWh användbart, 100 kWh nominellt); arbetsboken hade 75 kWh
+    'Mercedes GLC 400': dict(b=94.0),
+}
+# mätfel i uppmätta kurvor: (första %, sista %) som ersätts med en rak linje mellan punkterna utanför
+SMOOTH = {
+    'Xpeng G9 Performance 2025': [(45, 60)],   # en dipp kring 50 %
+}
+# delar av en kurva som ersätts med punkter ur biltest (rak linje mellan punkterna)
+PATCH = {
+    'Xpeng G9 Performance 2025': [(0, 288), (10, 288), (20, 397)],   # kurvan började på 113 kW upp till 10 %; testet visar cirka 290 kW
+}

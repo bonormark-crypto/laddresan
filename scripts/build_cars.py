@@ -9,7 +9,7 @@ Vilken laddkurva som hör till vilken bil står i scripts/car_mapping.py.
 """
 import json, sys, os, openpyxl
 S = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from car_mapping import M
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from car_mapping import M, EXTRA_CURVES, FIXES, SMOOTH, PATCH
 ws = openpyxl.load_workbook(sys.argv[1], data_only=True)['Sammanfattning per bil']
 cars = {r[0]: dict(name=r[0], n=r[1], cap=r[2], kg=r[3], w90=r[13], w120=r[15])
         for r in ws.iter_rows(min_row=5, values_only=True) if r[0]}
@@ -17,6 +17,7 @@ ws = openpyxl.load_workbook(sys.argv[2], data_only=True)['Charging curve']
 hdr = [c.value for c in ws[1]]; cols = list(ws.iter_cols(min_row=2, max_row=200, values_only=True))
 curves = {h: [(cols[0][i], v) for i, v in enumerate(cols[j]) if isinstance(v, (int, float)) and isinstance(cols[0][i], (int, float))]
           for j, h in enumerate(hdr) if j and h}
+curves.update(EXTRA_CURVES)
 EXCL = {'BMW iX3 50 xDrive', 'Volvo EX60 Twin Ultra P10', 'VW ID4 GTX 82 kWh', 'Tesla Model Y LR Juniper', 'Jaguar I-Pace EV320', 'Jaguar I-Pace 90 kWh'}
 # samma konstanter som Laddresans förbrukningsmodell (K i index.src.html)
 T = 20; cabin = 21; base = 0.5; heatPerC = 0.11; cop = min(3.5, max(1, 2.3 + 0.09 * T)); markup = 0.05
@@ -64,13 +65,20 @@ for name, (cv, note) in M.items():
     if c.get('w90') in (None, '') and c.get('w120') in (None, ''): continue
     cda, eta, how, m, crr = fit(c); how_n[how] = how_n.get(how, 0) + 1
     kw = curve101(curves[cv])
+    for a0, a1 in SMOOTH.get(name, []):   # mätfel: rak linje mellan punkterna strax utanför intervallet
+        lo, hi = a0 - 1, a1 + 1
+        for x in range(a0, a1 + 1): kw[x] = round(kw[lo] + (x - lo) / (hi - lo) * (kw[hi] - kw[lo]), 1)
+    pp = PATCH.get(name, [])
+    for (s0, k0), (s1, k1) in zip(pp, pp[1:]):
+        for x in range(s0, s1 + 1): kw[x] = round(k0 + (x - s0) / (s1 - s0) * (k1 - k0), 1) if s1 > s0 else k1
     wl = c.get('wltp') if False else None
     out.append(dict(name=name, b=round(float(c['cap']), 1), kg=round(float(c['kg'])), cda=cda, eta=eta, crr=crr, dc=round(max(kw)),
                     kw=kw, pre=max(kw) >= 120, curve=cv, cnote=note, n=int(c['n']), w90=round(float(c['w90'])) if c.get('w90') not in (None, '') else None,
                     w120=round(float(c['w120'])) if c.get('w120') not in (None, '') else None))
+for d in out: d.update(FIXES.get(d['name'], {}))
 out.sort(key=lambda d: d['name'].lower().lstrip('0123456789 '))
 json.dump(out, open(f'{S}/data/cars_extra.json', 'w'), ensure_ascii=False, separators=(',', ':'))
 print(len(out), how_n)
 import statistics
 print('crr range', min(d['crr'] for d in out), max(d['crr'] for d in out), 'cda range', min(d['cda'] for d in out), max(d['cda'] for d in out))
-print([ (d['name'],d['cda'],d['crr']) for d in out if d['cda']<0.45 or d['cda']>1.1 or d['crr']<0.006 or d['crr']>0.014])
+print([(d['name'],d['cda'],d['crr']) for d in out if d['cda']<0.45 or d['cda']>1.1 or d['crr']<0.006 or d['crr']>0.014])
